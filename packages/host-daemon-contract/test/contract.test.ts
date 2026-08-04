@@ -1026,8 +1026,8 @@ describe("host-daemon command schemas", () => {
   // `host.install_global_skills` (67) and `host.global_skills_status` (68) are
   // new commands an older daemon would reject, so each bump forces it to update
   // before the server can send them.
-  it("uses protocol version 69 for server-owned tool status labels", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(69);
+  it("uses protocol version 70 for restore-aware worktree provisioning", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(70);
   });
 
   it("binds Plan cancellation to a required turn id and typed result", () => {

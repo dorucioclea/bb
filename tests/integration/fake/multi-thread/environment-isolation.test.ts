@@ -5,6 +5,7 @@ import {
   archiveThread,
   getEnvironment,
   getHosts,
+  restoreEnvironment,
   runEnvironmentAction,
   sendTextMessage,
   unarchiveThread,
@@ -97,6 +98,84 @@ describe.sequential(
           threadA.environment.id,
         );
         expect(environment.status).toBe("destroyed");
+      }));
+
+    it("restores a destroyed managed environment, recovering committed work on the branch", () =>
+      withHarness(async (harness) => {
+        const project = await createProjectFixture(harness, {
+          name: "Restore Destroyed Environment",
+        });
+        const { thread, environment } = await createReadyHostThread(harness, {
+          projectId: project.id,
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+          workspace: { type: "managed-worktree" },
+        });
+        const originalPath = environment.path;
+        const branchName = environment.branchName;
+        if (!originalPath || !branchName) {
+          throw new Error("Managed worktree path/branch was not assigned");
+        }
+
+        // Commit work in the worktree so there is recoverable history on the
+        // branch (committed work survives the destroy; uncommitted does not).
+        await fs.writeFile(
+          path.join(originalPath, "recovered.txt"),
+          "keep me\n",
+        );
+        await runGit({ cwd: originalPath, args: ["add", "recovered.txt"] });
+        await runGit({
+          cwd: originalPath,
+          args: [
+            "-c",
+            "user.email=test@bb.test",
+            "-c",
+            "user.name=BB Test",
+            "commit",
+            "-m",
+            "committed work",
+          ],
+        });
+
+        // Archiving the only thread tears the workspace down (the integration
+        // harness disables the grace window).
+        await archiveThread(harness.api, thread.id);
+        await waitForPathRemoval(originalPath, DEFAULT_TIMEOUT_MS);
+        await waitForEnvironmentStatus(
+          harness.api,
+          environment.id,
+          "destroyed",
+          DEFAULT_TIMEOUT_MS,
+        );
+
+        // Restore reprovisions a fresh environment on the same branch and
+        // re-seeds the thread into idle (no automatic turn).
+        await restoreEnvironment(harness.api, thread.id);
+        const restoredThread = await waitForThreadStatus(
+          harness.api,
+          thread.id,
+          "idle",
+          DEFAULT_TIMEOUT_MS,
+        );
+        const restoredEnvironmentId = restoredThread.environmentId;
+        expect(restoredEnvironmentId).toBeTruthy();
+        // A fresh environment row replaces the terminal destroyed one.
+        expect(restoredEnvironmentId).not.toBe(environment.id);
+
+        const restoredEnvironment = await waitForEnvironmentStatus(
+          harness.api,
+          restoredEnvironmentId!,
+          "ready",
+          DEFAULT_TIMEOUT_MS,
+        );
+        expect(restoredEnvironment.branchName).toBe(branchName);
+        expect(restoredEnvironment.path).toBeTruthy();
+
+        // The committed work on the branch is recovered in the fresh worktree.
+        const recovered = await fs.readFile(
+          path.join(restoredEnvironment.path!, "recovered.txt"),
+          "utf8",
+        );
+        expect(recovered).toBe("keep me\n");
       }));
 
     it("isolates concurrent work across separate environments", () =>

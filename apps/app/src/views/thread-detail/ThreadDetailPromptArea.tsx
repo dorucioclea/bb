@@ -73,7 +73,10 @@ import {
   useClearThreadGoal,
   useStopThread,
 } from "@/hooks/mutations/thread-runtime-mutations";
-import { useUnarchiveThread } from "@/hooks/mutations/thread-state-mutations";
+import {
+  useRestoreThreadEnvironment,
+  useUnarchiveThread,
+} from "@/hooks/mutations/thread-state-mutations";
 import {
   getLatestPendingInteraction,
   useThreadQueuedMessages,
@@ -287,6 +290,7 @@ export function ThreadDetailPromptArea({
   const cancelThreadPlan = useCancelThreadPlan();
   const clearThreadGoal = useClearThreadGoal();
   const unarchiveThread = useUnarchiveThread();
+  const restoreEnvironment = useRestoreThreadEnvironment();
   // The personal project isn't a meaningful label in the footer, so skip it.
   const projectName = useProjectDisplayName(
     thread.projectId === PERSONAL_PROJECT_ID ? undefined : thread.projectId,
@@ -813,6 +817,12 @@ export function ThreadDetailPromptArea({
   const handleUnarchiveCurrentThread = useCallback(() => {
     unarchiveThread.mutate({ id: thread.id });
   }, [thread.id, unarchiveThread]);
+  const isRestoreEnvironmentPending =
+    restoreEnvironment.isPending &&
+    restoreEnvironment.variables?.id === thread.id;
+  const handleRestoreEnvironment = useCallback(() => {
+    restoreEnvironment.mutate({ id: thread.id });
+  }, [thread.id, restoreEnvironment]);
   const sourceThreadDisplayTitle = getThreadDisplayTitle({
     id: thread.id,
     title: thread.title,
@@ -1212,7 +1222,11 @@ export function ThreadDetailPromptArea({
           environmentGoneSection={
             environmentGoneStatus === null
               ? null
-              : { status: environmentGoneStatus }
+              : {
+                  status: environmentGoneStatus,
+                  onRestore: handleRestoreEnvironment,
+                  restorePending: isRestoreEnvironmentPending,
+                }
           }
           parentThreadSection={parentThreadSection}
           childThreadsSection={childThreadsSection}
@@ -1276,9 +1290,11 @@ export function ThreadDetailPromptArea({
       handleSetQueuedMessageGroupBoundary,
       handleToggleBannerSection,
       handleUnarchiveCurrentThread,
+      handleRestoreEnvironment,
       environmentGoneStatus,
       isFollowUpSubmitting,
       isUnarchiveCurrentThreadPending,
+      isRestoreEnvironmentPending,
       isQueueMutationPending,
       inlineEditor,
       activeGoalCard,

@@ -486,6 +486,11 @@ vi.mock("@/hooks/mutations/thread-state-mutations", () => ({
     mutate: mocks.unarchiveThreadMutate,
     variables: null,
   }),
+  useRestoreThreadEnvironment: () => ({
+    isPending: false,
+    mutate: vi.fn(),
+    variables: null,
+  }),
 }));
 
 vi.mock("@/hooks/queries/sidebar-navigation-query", () => ({

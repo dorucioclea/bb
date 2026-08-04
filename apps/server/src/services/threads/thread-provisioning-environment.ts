@@ -237,6 +237,11 @@ interface ManagedEnvironmentPlanArgs {
   hostId: string;
   sourcePath: string;
   baseBranch: BaseBranchSpec;
+  /**
+   * Explicit branch to provision (environment restore). When omitted, the branch
+   * is derived from the thread's title slug for a brand-new thread.
+   */
+  branchName?: string;
   thread: Thread;
   workspaceProvisionType: "managed-worktree";
 }
@@ -846,10 +851,12 @@ function buildManagedEnvironmentPlan(
     },
     buildRequest: ({ context, environment }) => {
       const command = buildEnvironmentProvisionCommand({
-        branchName: buildManagedBranchName({
-          branchSlug: context.request.branchSlug,
-          threadId: args.thread.id,
-        }),
+        branchName:
+          args.branchName ??
+          buildManagedBranchName({
+            branchSlug: context.request.branchSlug,
+            threadId: args.thread.id,
+          }),
         baseBranch: args.baseBranch,
         environmentId: environment.id,
         hostId: args.hostId,
@@ -925,6 +932,9 @@ async function resolveEnvironmentCreationPlan(
         hostId: args.intent.hostId,
         sourcePath: args.intent.sourcePath,
         baseBranch: args.intent.baseBranch,
+        ...(args.intent.branchName
+          ? { branchName: args.intent.branchName }
+          : {}),
         thread: args.thread,
         workspaceProvisionType: args.intent.workspaceProvisionType,
       });

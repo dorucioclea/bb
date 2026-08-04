@@ -365,6 +365,7 @@ type ExpectedThreadsKey =
   | "promptHistory"
   | "queuedMessages"
   | "reorderPinned"
+  | "restoreEnvironment"
   | "search"
   | "send"
   | "spawn"

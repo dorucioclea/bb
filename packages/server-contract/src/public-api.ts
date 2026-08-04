@@ -1157,6 +1157,12 @@ export const publicApiRoutes = {
       request: noRequest<PathId>(),
       response: jsonResponse<{ ok: true }>(),
     }),
+    restoreEnvironment: defineRoute({
+      path: "/threads/:id/restore-environment",
+      method: "post",
+      request: noRequest<PathId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
     read: defineRoute({
       path: "/threads/:id/read",
       method: "post",

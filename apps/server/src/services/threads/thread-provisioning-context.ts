@@ -35,6 +35,13 @@ const directManagedIntentSchema = z.object({
   sourcePath: z.string().min(1),
   baseBranch: baseBranchSpecSchema,
   workspaceProvisionType: z.literal("managed-worktree"),
+  /**
+   * Explicit branch to provision. Set when restoring an environment so the fresh
+   * worktree re-checks-out the destroyed environment's exact branch (recovering
+   * its committed work) instead of deriving a new `bb/<slug>-<threadId>` name.
+   * Omitted for a brand-new thread, which derives the branch from its title slug.
+   */
+  branchName: z.string().min(1).optional(),
 });
 
 const directPersonalIntentSchema = z.object({

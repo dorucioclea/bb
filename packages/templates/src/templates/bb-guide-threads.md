@@ -202,6 +202,9 @@ Lifecycle:
   bb thread unarchive [id]                 Unarchive a thread
     --self                                 Unarchive current thread
 
+  bb thread restore-environment [id]       Reprovision a destroyed environment
+    --self                                 Restore current thread's environment
+
   bb thread delete <id>                    Delete permanently
     --yes                                  Skip confirmation
 

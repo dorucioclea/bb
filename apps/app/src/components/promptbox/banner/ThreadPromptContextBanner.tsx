@@ -118,6 +118,15 @@ export interface ThreadPromptArchivedSection {
  */
 export interface ThreadPromptEnvironmentGoneSection {
   status: Extract<EnvironmentStatus, "destroying" | "destroyed">;
+  /**
+   * Restores the thread's environment by reprovisioning a fresh workspace on the
+   * thread's branch (recovering committed work). Enabled once the old workspace
+   * is fully gone (`destroyed`); while `destroying` the action shows a disabled
+   * "Cleaning up…" state. Omitted when restore isn't available (e.g. unmanaged
+   * environments).
+   */
+  onRestore?: () => void;
+  restorePending?: boolean;
 }
 
 /**
@@ -526,6 +535,33 @@ function PullRequestReadyTextAction({
   );
 }
 
+function EnvironmentRestoreTextAction({
+  status,
+  isPending,
+  onRestore,
+}: {
+  status: Extract<EnvironmentStatus, "destroying" | "destroyed">;
+  isPending?: boolean;
+  onRestore: () => void;
+}) {
+  const cleaningUp = status === "destroying";
+  const label = cleaningUp
+    ? "Cleaning up..."
+    : isPending
+      ? "Restoring..."
+      : "Restore environment";
+  return (
+    <button
+      type="button"
+      onClick={onRestore}
+      disabled={cleaningUp || Boolean(isPending)}
+      className="rounded px-1 py-0.5 text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {label}
+    </button>
+  );
+}
+
 const PULL_REQUEST_MERGE_ACTIONS: readonly {
   method: PullRequestMergeMethod;
   label: string;
@@ -881,6 +917,12 @@ export function ThreadPromptContextBanner({
             <ThreadUnarchiveTextAction
               isPending={archivedSection.unarchivePending}
               onUnarchive={archivedSection.onUnarchive}
+            />
+          ) : environmentGoneSection?.onRestore ? (
+            <EnvironmentRestoreTextAction
+              status={environmentGoneSection.status}
+              isPending={environmentGoneSection.restorePending}
+              onRestore={environmentGoneSection.onRestore}
             />
           ) : null
         }

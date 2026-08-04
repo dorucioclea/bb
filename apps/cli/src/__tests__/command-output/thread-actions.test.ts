@@ -99,6 +99,38 @@ describe("bb thread action command output", () => {
     );
   });
 
+  it("bb thread restore-environment sends the thread id from args", async () => {
+    const restorePost = vi.fn(async () => ({ ok: true }));
+    stubServerApi({ "v1.threads.:id.restore-environment.$post": restorePost });
+
+    await runCommand(
+      ["thread", "restore-environment", "thread-restore-1"],
+      register,
+    );
+
+    expect(restorePost).toHaveBeenCalledWith({
+      param: { id: "thread-restore-1" },
+    });
+    expect(collectLogLines(vi.mocked(console.log))).toContain(
+      "Environment restore started for thread thread-restore-1",
+    );
+  });
+
+  it("bb thread restore-environment prefixes failures with thread context", async () => {
+    const restorePost = vi.fn(async () => {
+      throw new Error("HTTP 409: environment is still being torn down");
+    });
+    stubServerApi({ "v1.threads.:id.restore-environment.$post": restorePost });
+
+    await expect(
+      runCommand(["thread", "restore-environment", "thread-restore-1"], register),
+    ).rejects.toThrow("process.exit:1");
+
+    expect(collectLogLines(vi.mocked(console.error))).toContain(
+      "Error: Failed to restore environment for thread thread-restore-1: HTTP 409: environment is still being torn down",
+    );
+  });
+
   it("bb thread pin sends the thread id from args", async () => {
     const pinnedThread = fixtures.makeThread({
       id: "thread-pin-1",

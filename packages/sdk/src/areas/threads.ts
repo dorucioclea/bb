@@ -111,6 +111,7 @@ export type ThreadSendResult = { ok: true };
 export type ThreadStopResult = { ok: true };
 export type ThreadBannerActionResult = { ok: true };
 export type ThreadUnarchiveResult = { ok: true };
+export type ThreadRestoreEnvironmentResult = { ok: true };
 export type ThreadArchiveAllResult = ThreadArchiveAllResponse;
 export type ThreadReadStateResult = ThreadResponse;
 export type ThreadPinOrderResult = ThreadListResponse;
@@ -433,6 +434,9 @@ export interface ThreadsArea {
   ): Promise<ThreadPromptHistoryResult>;
   queuedMessages: ThreadQueuedMessagesArea;
   reorderPinned(args: ThreadPinOrderArgs): Promise<ThreadPinOrderResult>;
+  restoreEnvironment(
+    args: ThreadActionArgs,
+  ): Promise<ThreadRestoreEnvironmentResult>;
   search(args: ThreadSearchArgs): Promise<ThreadSearchResult>;
   send(args: ThreadSendArgs): Promise<ThreadSendResult>;
   spawn(args: ThreadSpawnArgs): Promise<ThreadSpawnResult>;
@@ -1095,6 +1099,14 @@ export function createThreadsArea(args: CreateSdkAreaArgs): ThreadsArea {
           ...signalRequestArgs(input.signal),
         ),
       );
+    },
+    async restoreEnvironment(input) {
+      await transport.readVoid(
+        transport.api.v1.threads[":id"]["restore-environment"].$post({
+          param: { id: input.threadId },
+        }),
+      );
+      return { ok: true };
     },
     async unarchive(input) {
       await transport.readVoid(

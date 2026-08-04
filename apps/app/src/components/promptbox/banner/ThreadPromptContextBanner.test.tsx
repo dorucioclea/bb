@@ -150,6 +150,54 @@ describe("ThreadPromptContextBanner", () => {
     },
   );
 
+  it("renders an enabled Restore action once the environment is destroyed", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadPromptContextBanner
+        gitSection={null}
+        gitSectionPending={false}
+        archivedSection={null}
+        environmentGoneSection={{
+          status: "destroyed",
+          onRestore: noop,
+          restorePending: false,
+        }}
+        parentThreadSection={null}
+        childThreadsSection={null}
+        pullRequestSection={null}
+        expandedSection={null}
+        onToggleSection={noop}
+      />,
+    );
+
+    expect(markup).toContain("Restore environment");
+    expect(markup).toContain("<button");
+    expect(markup).not.toContain('disabled=""');
+  });
+
+  it("shows a disabled cleaning-up Restore action while the environment is destroying", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadPromptContextBanner
+        gitSection={null}
+        gitSectionPending={false}
+        archivedSection={null}
+        environmentGoneSection={{
+          status: "destroying",
+          onRestore: noop,
+          restorePending: false,
+        }}
+        parentThreadSection={null}
+        childThreadsSection={null}
+        pullRequestSection={null}
+        expandedSection={null}
+        onToggleSection={noop}
+      />,
+    );
+
+    expect(markup).toContain("Cleaning up...");
+    expect(markup).toContain('disabled=""');
+    expect(markup).not.toContain("Restore environment");
+  });
+
   it("labels a standalone pull request without non-actionable attention text", () => {
     const markup = renderToStaticMarkup(
       <ThreadPromptContextBanner

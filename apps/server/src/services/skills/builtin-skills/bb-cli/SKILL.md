@@ -228,6 +228,10 @@ environment pull-request show <id>`. Diff commands require an explicit target
   and the matching merge-base or commit flags; all support `--json`.
 - `bb environment pull-request ready|draft|merge` manages pull-request state;
   `bb environment archive-threads` bulk-archives an environment's threads.
+- `bb thread restore-environment <id>` reprovisions a fresh environment for a
+  thread whose managed environment was destroyed (for example after archiving
+  its last thread), re-checking out the thread's branch so committed work is
+  recovered. Unmanaged environments cannot be restored.
 - Spawned child threads inherit permission from explicit flags, then the
   parent thread's last execution, then project defaults.
 - Public permission modes are `accept-edits`, `auto`, and `full`.

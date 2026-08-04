@@ -50,6 +50,11 @@ interface ThreadUnarchiveCommandOptions {
   json?: boolean;
 }
 
+interface ThreadRestoreEnvironmentCommandOptions {
+  self?: boolean;
+  json?: boolean;
+}
+
 interface ThreadPinCommandOptions {
   self?: boolean;
   json?: boolean;
@@ -283,6 +288,35 @@ export function registerActionsCommands(
           await sdk.threads.unarchive({ threadId });
           if (outputJson(opts, { ok: true, threadId })) return;
           console.log(`Thread ${threadId} unarchived`);
+        },
+      ),
+    );
+
+  parent
+    .command("restore-environment [id]")
+    .description(
+      "Reprovision a fresh environment for a thread whose environment is gone",
+    )
+    .option("--self", "Target the current thread (from BB_THREAD_ID)")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(
+        async (
+          id: string | undefined,
+          opts: ThreadRestoreEnvironmentCommandOptions,
+        ) => {
+          const threadId = requireThreadIdOrSelf(id, opts);
+          const sdk = createCliBbSdk(getUrl());
+          try {
+            await sdk.threads.restoreEnvironment({ threadId });
+          } catch (err: unknown) {
+            throw prependErrorContext(
+              `Failed to restore environment for thread ${threadId}`,
+              err,
+            );
+          }
+          if (outputJson(opts, { ok: true, threadId })) return;
+          console.log(`Environment restore started for thread ${threadId}`);
         },
       ),
     );
