@@ -25,6 +25,7 @@ import {
 import type { Logger } from "@bb/logger";
 import { scaffoldPlugin } from "@bb/templates/plugin-scaffold";
 import { PLUGIN_SDK_MAJOR, PLUGIN_SDK_VERSION } from "@bb/domain";
+import { validatePluginArtifactMeta } from "../../../src/services/plugins/app-bundle.js";
 import {
   gitArtifactCacheDir,
   npmArtifactCacheDir,
@@ -485,7 +486,12 @@ describe("plugin install flows", () => {
       expect(entry?.version).toBe("0.1.0");
     });
 
-    it("rejects authoritative artifact identity and format errors on initial installs", async () => {
+    // bb now builds a git plugin's server bundle itself, so a committed
+    // dist/ is not authoritative for git the way it is for npm: whatever the
+    // author checked in is replaced by a bundle built against this SDK.
+    // `validatePluginArtifactMeta` still guards npm artifacts; it is covered
+    // directly in "plugin artifact metadata validation" below.
+    it("rebuilds a git plugin's server bundle over any committed dist", async () => {
       const identityRepo = join(workDir, "repo-artifact-identity");
       await writePluginFixture(identityRepo, {
         name: "bb-plugin-artifact-identity",
@@ -498,39 +504,19 @@ describe("plugin install flows", () => {
       await initGitRepo(identityRepo);
       await commitAll(identityRepo, "mismatched artifact identity");
 
-      await expect(
-        service.install(`git:${identityRepo}@main`),
-      ).rejects.toThrowError(
-        /server artifact pluginId "wrong-plugin-id" does not match manifest pluginId "artifact-identity"/,
+      const entry = await service.install(`git:${identityRepo}@main`);
+      expect(entry.status).toBe("running");
+      const meta: unknown = JSON.parse(
+        await readFile(
+          join(entry.rootDir, "dist", "server.meta.json"),
+          "utf8",
+        ),
       );
-      expect(
-        getInstalledPluginRegistration(db, "artifact-identity"),
-      ).toBeUndefined();
-      expect(listPluginArtifacts(db, "artifact-identity")).toHaveLength(0);
-
-      const formatRepo = join(workDir, "repo-artifact-format");
-      await writePluginFixture(formatRepo, {
-        name: "bb-plugin-artifact-format",
+      expect(meta).toMatchObject({
+        pluginId: "artifact-identity",
+        sdkVersion: PLUGIN_SDK_VERSION,
+        artifactFormatVersion: 1,
       });
-      await mkdir(join(formatRepo, "dist"), { recursive: true });
-      await writeFile(
-        join(formatRepo, "dist", "server.meta.json"),
-        artifactMeta({
-          artifactFormatVersion: 2,
-          pluginId: "artifact-format",
-        }),
-      );
-      await initGitRepo(formatRepo);
-      await commitAll(formatRepo, "unknown artifact format");
-      await expect(
-        service.install(`git:${formatRepo}@main`),
-      ).rejects.toThrowError(
-        /server artifact.*unknown artifactFormatVersion 2.*supported value is 1/,
-      );
-      expect(
-        getInstalledPluginRegistration(db, "artifact-format"),
-      ).toBeUndefined();
-      expect(listPluginArtifacts(db, "artifact-format")).toHaveLength(0);
     });
 
     it("hard-fails install on an engines.bb mismatch and cleans up the clone", async () => {
@@ -595,6 +581,133 @@ describe("plugin install flows", () => {
 
     it("refuses a git url without the git binary being asked to run arbitrary flags", async () => {
       await expect(service.install("git:@main")).rejects.toThrowError();
+    });
+
+    it("builds both bundles for a git plugin", async () => {
+      const repoDir = join(workDir, "repo-selfcontained");
+      await writePluginFixture(repoDir, { name: "bb-plugin-selfcontained" });
+      await initGitRepo(repoDir);
+      await commitAll(repoDir, "init");
+
+      const entry = await service.install(`git:${repoDir}@main`);
+      expect(entry.status).toBe("running");
+      // Built here rather than committed, so the loader prefers a bundle
+      // stamped for this exact SDK over the TypeScript source.
+      await stat(join(entry.rootDir, "dist", "server.js"));
+      await stat(join(entry.rootDir, "dist", "server.meta.json"));
+    });
+
+    it("ignores a repository .npmrc when installing dependencies", async () => {
+      const repoDir = join(workDir, "repo-npmrc");
+      await writePluginFixture(repoDir, { name: "bb-plugin-npmrc" });
+      // `npm --prefix <clone>` reads this file. An author could redirect the
+      // registry, relax TLS, or interpolate ${ENV} into request URLs, so it
+      // must not survive into the install.
+      await writeFile(
+        join(repoDir, ".npmrc"),
+        "registry=http://127.0.0.1:1/evil\nstrict-ssl=false\n",
+      );
+      await initGitRepo(repoDir);
+      await commitAll(repoDir, "init");
+
+      const entry = await service.install(`git:${repoDir}@main`);
+
+      expect(entry.status).toBe("running");
+      await expect(stat(join(entry.rootDir, ".npmrc"))).rejects.toThrowError();
+    });
+
+    it.runIf(hasNpm)(
+      "inlines a git plugin's third-party dependency into its bundles",
+      async () => {
+        const depDir = join(workDir, "dep-package");
+        await mkdir(depDir, { recursive: true });
+        await writeFile(
+          join(depDir, "package.json"),
+          JSON.stringify({
+            name: "bb-test-greeter",
+            version: "1.0.0",
+            main: "index.js",
+          }),
+        );
+        await writeFile(
+          join(depDir, "index.js"),
+          "module.exports.greet = () => 'hello from the dependency';",
+        );
+
+        const repoDir = join(workDir, "repo-with-deps");
+        await writePluginFixture(repoDir, { name: "bb-plugin-withdeps" });
+        const manifestPath = join(repoDir, "package.json");
+        const manifest: unknown = JSON.parse(
+          await readFile(manifestPath, "utf8"),
+        );
+        await writeFile(
+          manifestPath,
+          JSON.stringify({
+            ...(manifest as Record<string, unknown>),
+            dependencies: { "bb-test-greeter": `file:${depDir}` },
+          }),
+        );
+        await writeFile(
+          join(repoDir, "server.ts"),
+          `import { greet } from "bb-test-greeter";\n` +
+            `export default function plugin(bb: any) { bb.log.info(greet()); }`,
+        );
+        await initGitRepo(repoDir);
+        await commitAll(repoDir, "init");
+
+        const entry = await service.install(`git:${repoDir}@main`);
+        expect(entry.status).toBe("running");
+        const bundle = await readFile(
+          join(entry.rootDir, "dist", "server.js"),
+          "utf8",
+        );
+        expect(bundle).toContain("hello from the dependency");
+        // node_modules is retained: esbuild only bundles statically reachable
+        // code, so a dependency's runtime data files must survive.
+        await stat(join(entry.rootDir, "node_modules"));
+      },
+    );
+  });
+
+  describe("plugin artifact metadata validation", () => {
+    // Guards npm artifacts, which bb never builds. Covered directly because
+    // git installs now overwrite any committed dist/ metadata.
+    it("rejects an artifact whose pluginId does not match the manifest", () => {
+      expect(
+        validatePluginArtifactMeta({
+          artifact: "server",
+          raw: artifactMeta({ pluginId: "wrong-plugin-id" }),
+          pluginId: "artifact-identity",
+          pluginVersion: "0.1.0",
+        }),
+      ).toMatch(
+        /server artifact pluginId "wrong-plugin-id" does not match manifest pluginId "artifact-identity"/,
+      );
+    });
+
+    it("rejects an unknown artifactFormatVersion", () => {
+      expect(
+        validatePluginArtifactMeta({
+          artifact: "server",
+          raw: artifactMeta({
+            artifactFormatVersion: 2,
+            pluginId: "artifact-format",
+          }),
+          pluginId: "artifact-format",
+          pluginVersion: "0.1.0",
+        }),
+      ).toMatch(/unknown artifactFormatVersion 2.*supported value is 1/);
+    });
+
+    it("accepts metadata that matches the manifest and this SDK", () => {
+      expect(
+        validatePluginArtifactMeta({
+          artifact: "server",
+          raw: artifactMeta({ pluginId: "artifact-ok" }),
+          pluginId: "artifact-ok",
+          pluginVersion: "0.1.0",
+        }),
+      ).toBeNull();
     });
   });
 

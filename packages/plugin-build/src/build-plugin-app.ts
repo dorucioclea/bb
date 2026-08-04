@@ -7,7 +7,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { derivePluginId } from "@bb/domain";
 import type { Plugin } from "esbuild";
@@ -16,6 +16,7 @@ import {
   TW_ANIMATE_CSS,
 } from "./generated/plugin-theme.generated.js";
 import { RUNTIME_EXPORT_MANIFEST } from "./runtime-export-manifest.js";
+import { type PluginBuildToolchain } from "./toolchain.js";
 import { createPluginArtifactMeta } from "./plugin-artifact-meta.js";
 import { validatePluginBuildManifest } from "./plugin-manifest.js";
 
@@ -380,12 +381,19 @@ async function readPluginAppConfig(rootDir: string): Promise<PluginAppConfig> {
 async function buildTailwindCss(
   rootDir: string,
   pluginId: string,
+  toolchain: PluginBuildToolchain,
 ): Promise<string> {
+  // A dynamic specifier is opaque to TS, so restate the module types here.
+  // The packages stay devDependencies: they are resolved at runtime from the
+  // caller's toolchain, and are needed only for these types.
   const [{ compile }, { Scanner }] = await Promise.all([
-    import("@tailwindcss/node"),
-    import("@tailwindcss/oxide"),
+    import(toolchain.tailwindNode) as Promise<
+      typeof import("@tailwindcss/node")
+    >,
+    import(toolchain.tailwindOxide) as Promise<
+      typeof import("@tailwindcss/oxide")
+    >,
   ]);
-  const cliRequire = createRequire(import.meta.url);
   const input = [
     `@layer theme, utilities;`,
     `@import "tailwindcss/theme.css" layer(theme);`,
@@ -403,17 +411,17 @@ async function buildTailwindCss(
   const compiler = await compile(input, {
     base: rootDir,
     onDependency: () => {},
+    // Resolved against the toolchain rather than this module: a shipped
+    // server bundles @bb/plugin-build but installs no tailwindcss, so
+    // resolving relative to import.meta.url finds nothing there.
     customCssResolver: async (id) => {
       if (id !== "tailwindcss" && !id.startsWith("tailwindcss/")) {
         return undefined;
       }
-      try {
-        return cliRequire.resolve(
-          id === "tailwindcss" ? "tailwindcss/index.css" : id,
-        );
-      } catch {
-        return undefined;
-      }
+      const subpath =
+        id === "tailwindcss" ? "index.css" : id.slice("tailwindcss/".length);
+      const candidate = join(toolchain.tailwindCssDir, subpath);
+      return existsSync(candidate) ? candidate : undefined;
     },
   });
   const scannerSources: ScannerSource[] = [
@@ -441,6 +449,7 @@ export interface PluginAppBuildResult {
 export async function buildPluginApp(
   rootDir: string,
   bbVersion: string,
+  toolchain: PluginBuildToolchain,
 ): Promise<PluginAppBuildResult> {
   const { appEntry, packageName, pluginVersion } =
     await readPluginAppConfig(rootDir);
@@ -463,7 +472,9 @@ export async function buildPluginApp(
     const stagedCssPath = join(stageDir, "app.css");
     const stagedMetaPath = join(stageDir, "app.meta.json");
 
-    const esbuild = await import("esbuild");
+    const esbuild = (await import(
+      toolchain.esbuild
+    )) as typeof import("esbuild");
     await esbuild.build({
       entryPoints: [appEntry],
       outfile: stagedJsPath,
@@ -501,7 +512,9 @@ export async function buildPluginApp(
     } catch (error) {
       if (!isRecord(error) || error.code !== "ENOENT") throw error;
     }
-    const tailwindCss = (await buildTailwindCss(rootDir, pluginId)).trimEnd();
+    const tailwindCss = (
+      await buildTailwindCss(rootDir, pluginId, toolchain)
+    ).trimEnd();
     await writeFile(stagedCssPath, `${tailwindCss}\n${authoredCss}`);
     await writeFile(
       stagedMetaPath,

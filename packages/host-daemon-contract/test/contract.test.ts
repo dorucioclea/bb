@@ -1023,11 +1023,14 @@ describe("host-daemon local schemas", () => {
 });
 
 describe("host-daemon command schemas", () => {
-  // `host.install_global_skills` (67) and `host.global_skills_status` (68) are
-  // new commands an older daemon would reject, so each bump forces it to update
-  // before the server can send them.
-  it("uses protocol version 70 for restore-aware worktree provisioning", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(70);
+  // Codex structured inference gained a required reasoning-effort field in
+  // version 70, and version 71 requires a `createWorktree` that preserves an
+  // existing branch (checks it out in place instead of `-B`-resetting it to
+  // base) so environment restore recovers committed work instead of silently
+  // discarding it. Older daemons mishandle both, so each bump forces an update
+  // before the server relies on the new behavior.
+  it("uses protocol version 71 for restore-aware worktree provisioning", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(71);
   });
 
   it("binds Plan cancellation to a required turn id and typed result", () => {
@@ -1461,6 +1464,7 @@ describe("host-daemon command schemas", () => {
       hostDaemonCommandSchema.parse({
         type: "codex.inference.complete",
         model: "gpt-5.4-mini",
+        reasoningEffort: "none",
         prompt: "Return a JSON object with a short title.",
         outputSchema: {
           type: "object",
@@ -1475,7 +1479,21 @@ describe("host-daemon command schemas", () => {
     ).toMatchObject({
       type: "codex.inference.complete",
       model: "gpt-5.4-mini",
+      reasoningEffort: "none",
     });
+
+    for (const reasoningEffort of [undefined, "medium"]) {
+      expect(() =>
+        hostDaemonCommandSchema.parse({
+          type: "codex.inference.complete",
+          model: "gpt-5.6-luna",
+          reasoningEffort,
+          prompt: "Return a short title.",
+          outputSchema: { type: "object" },
+          timeoutMs: 10000,
+        }),
+      ).toThrow();
+    }
 
     expect(
       hostDaemonCommandSchema.parse({
@@ -1589,6 +1607,7 @@ describe("host-daemon command schemas", () => {
         hostDaemonCommandSchema.parse({
           type: "codex.inference.complete",
           model: "gpt-5.4-mini",
+          reasoningEffort: "none",
           prompt: "Return a title",
           outputSchema,
           timeoutMs: 10000,

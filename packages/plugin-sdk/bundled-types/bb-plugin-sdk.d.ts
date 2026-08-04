@@ -4488,6 +4488,7 @@ declare const hostDaemonCommandRegistry: {
     "codex.inference.complete": HostDaemonCommandDescriptor<"codex.inference.complete", z$1.ZodObject<{
         type: z$1.ZodLiteral<"codex.inference.complete">;
         model: z$1.ZodString;
+        reasoningEffort: z$1.ZodLiteral<"none">;
         prompt: z$1.ZodString;
         outputSchema: z$1.ZodType<JsonObject, unknown, z$1.core.$ZodTypeInternals<JsonObject, unknown>>;
         timeoutMs: z$1.ZodNumber;

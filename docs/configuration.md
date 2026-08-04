@@ -8,7 +8,7 @@ Use `bb-app config` for non-secret bb settings:
 
 ```bash
 npx bb-app config set BB_APP_URL http://<machine>.<tailnet>.ts.net:38886
-npx bb-app config set BB_INFERENCE codex/gpt-5.4-mini
+npx bb-app config set BB_INFERENCE codex/gpt-5.6-luna
 npx bb-app config set BB_TRANSCRIPTION codex/gpt-4o-mini-transcribe
 npx bb-app config list
 npx bb-app config unset BB_APP_URL
@@ -97,7 +97,7 @@ signal it, so a stale file left by a crash cannot stop an unrelated process.
 | Key                | Command         | When to set             | Used for                                                                                                                                       |
 | ------------------ | --------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BB_APP_URL`       | `bb-app config` | Optional for remote use | Human-facing app URL used for generated links and allowed browser origins. Leave empty for local-only use.                                     |
-| `BB_INFERENCE`     | `bb-app config` | Optional                | Server-side helper model in `provider/model` format. Defaults to `codex/gpt-5.4-mini`.                                                         |
+| `BB_INFERENCE`     | `bb-app config` | Optional                | Server-side helper model in `provider/model` format. Defaults to `codex/gpt-5.6-luna`; the Codex helper route uses no reasoning.               |
 | `BB_TRANSCRIPTION` | `bb-app config` | Optional                | Voice transcription model in `provider/model` format. Defaults to `codex/gpt-4o-mini-transcribe`.                                              |
 | `BB_SERVER_URL`    | `bb-app config` | Remote CLI/host use     | Server URL for standalone `bb` CLI and `host-daemon` commands on the current machine. The CLI defaults to `http://127.0.0.1:38886` when unset. |
 | `BB_LOG_LEVEL`     | `bb-app config` | Debugging               | Log level for the next bb start: `trace`, `debug`, `info`, `warn`, `error`, or `fatal`.                                                        |
@@ -565,9 +565,13 @@ The five settings other than `maxActiveRuns` are snapshotted into each new run.
 Settings changes do not require a plugin reload.
 
 `bb plugin install npm:<package>[@<version|tag|range>]` requires `npm` on PATH
-(packages are installed with `--ignore-scripts`). Git plugins without prebuilt
-frontend artifacts also use npm with lifecycle scripts disabled, then discard
-their installed dependencies after bundling. An omitted npm spec tracks
+(packages are installed with `--ignore-scripts`). Git plugins also use npm with
+lifecycle scripts disabled, so they may depend on third-party packages; bb
+then builds both their server and frontend bundles. `node_modules` is
+retained, because a dependency can load data files that bundling cannot
+inline. A committed `dist/` is always replaced by the bundles bb builds.
+Dependency resolution and bundling run on install and update-apply only —
+never on an update check, which reads the manifest and stops. An omitted npm spec tracks
 the newest compatible stable release, ranges track within the range, dist-tags
 track the tag, and exact versions are pinned. `git:<url>@<ref>` requires `git`;
 branches track their head while tags and commits are pinned. Local

@@ -35,10 +35,7 @@ import {
   providerCliStatusResponseSchema,
 } from "./local.js";
 
-// 70: environment restore — `createWorktree` must preserve an existing branch
-// (check it out in place) instead of `-B`-resetting it to base; an older daemon
-// would silently discard the committed work Restore recovers.
-export const HOST_DAEMON_PROTOCOL_VERSION = 70 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 71 as const;
 
 export {
   BRANCH_LIST_LIMIT_MAX,
@@ -413,6 +410,7 @@ const codexInferenceCompleteCommandSchema = z
   .object({
     type: z.literal("codex.inference.complete"),
     model: z.string().min(1),
+    reasoningEffort: z.literal("none"),
     prompt: z.string().min(1),
     outputSchema: jsonObjectSchema,
     timeoutMs: z.number().int().positive(),
