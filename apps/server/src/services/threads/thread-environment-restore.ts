@@ -3,6 +3,7 @@ import type { Environment, Thread } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import { applyLoggedEnvironmentLifecycleEvent } from "../environments/lifecycle-outcome.js";
+import { requirePublicThread } from "../lib/entity-lookup.js";
 import { applyLoggedThreadLifecycleEvent } from "./lifecycle-outcome.js";
 import { buildExecutionOptions } from "./thread-commands.js";
 import {
@@ -80,10 +81,7 @@ export async function restoreThreadEnvironment(
   deps: AppDeps,
   args: RestoreThreadEnvironmentArgs,
 ): Promise<void> {
-  const thread = getThread(deps.db, args.threadId);
-  if (!thread || thread.deletedAt !== null) {
-    throw new ApiError(404, "thread_not_found", "Thread not found");
-  }
+  const thread = requirePublicThread(deps.db, args.threadId);
 
   if (thread.archivedAt !== null) {
     unarchiveThread(deps.db, deps.hub, thread.id);
