@@ -641,6 +641,57 @@ export interface PluginHosts {
 }
 
 // ---------------------------------------------------------------------------
+// Cloud AI provider (experimental).
+// ---------------------------------------------------------------------------
+
+/** Why a cloud AI call failed; drives the host's local-fallback routing. */
+export type CloudAiFailureCode =
+  | "unauthorized"
+  | "quota_exhausted"
+  | "unavailable";
+
+/**
+ * Result-shaped (never a thrown class) so the contract survives plugin
+ * bundling — an error class would have a different identity in the plugin
+ * bundle than in the host. A provider may still reject on abort; the host
+ * checks its own signal and treats that as a timeout.
+ */
+export type CloudAiResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; code: CloudAiFailureCode; message: string };
+
+export interface CloudAiCompleteArgs {
+  prompt: string;
+  /** JSON Schema (top-level `type: "object"`) the structured result must match. */
+  schema: JsonValue;
+  /** Host-owned abort signal; the host maps aborts to its timeout semantics. */
+  signal: AbortSignal;
+}
+
+export interface CloudAiTranscribeArgs {
+  file: File;
+  prompt?: string;
+  /** Host-owned abort signal; the host maps aborts to its timeout semantics. */
+  signal: AbortSignal;
+}
+
+/**
+ * A cloud route for bb's small AI tasks (thread titles, commit messages,
+ * voice transcription). When a registered provider `isAvailable()`, the host
+ * tries it before the locally configured `BB_INFERENCE`/`BB_TRANSCRIPTION`
+ * providers and falls back to those on `ok: false`.
+ */
+export interface CloudAiProvider {
+  /**
+   * Cheap synchronous probe consulted per call — pairing state, user setting,
+   * failure latches. The host never calls `complete`/`transcribe` when false.
+   */
+  isAvailable(): boolean;
+  complete(args: CloudAiCompleteArgs): Promise<CloudAiResult<JsonValue>>;
+  transcribe(args: CloudAiTranscribeArgs): Promise<CloudAiResult<string>>;
+}
+
+// ---------------------------------------------------------------------------
 // Status + the API root.
 // ---------------------------------------------------------------------------
 
@@ -706,4 +757,10 @@ export interface BbPluginApi {
    * The sanctioned place to clear timers and close connections.
    */
   onDispose(hook: () => void | Promise<void>): void;
+  /**
+   * EXPERIMENTAL (see docs/api_to_audit.md). Register a cloud route for bb's
+   * small AI tasks. Single slot host-wide: the most recent registration wins;
+   * it is unregistered automatically when this plugin reloads or disables.
+   */
+  experimental_registerCloudAiProvider(provider: CloudAiProvider): void;
 }

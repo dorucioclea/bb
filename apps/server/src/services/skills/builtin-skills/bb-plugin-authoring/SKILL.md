@@ -716,6 +716,20 @@ the same cleanup without a replacement. A
 captured `bb` from a previous load throws `PluginContextStaleError` on use
 — never stash the API object in module-level state that outlives a load.
 
+### bb.experimental_registerCloudAiProvider
+
+`bb.experimental_registerCloudAiProvider(provider)` (EXPERIMENTAL — see
+docs/api_to_audit.md) registers a cloud route for bb's small AI tasks:
+thread-title inference, commit-message inference, and voice transcription.
+The provider is `{ isAvailable(): boolean; complete({prompt, schema, signal});
+transcribe({file, prompt?, signal}) }` where the async methods resolve to
+`{ ok: true, value }` or `{ ok: false, code, message }` (codes: `unauthorized`,
+`quota_exhausted`, `unavailable`) — result-shaped, never thrown classes. When
+`isAvailable()` is true the host tries the provider before the locally
+configured AI providers and falls back on `ok: false`. Single host-wide slot;
+the most recent registration wins and is unregistered automatically with the
+plugin's dispose hooks. Used by the builtin connect plugin for bb Cloud.
+
 ## Frontend (`bb.app` entry)
 
 `app.tsx` default-exports `definePluginApp` from `@bb/plugin-sdk/app`.

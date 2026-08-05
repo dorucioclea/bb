@@ -7,6 +7,7 @@ type ExpectedBbPluginApiKey =
   | "background"
   | "cli"
   | "events"
+  | "experimental_registerCloudAiProvider"
   | "hosts"
   | "http"
   | "log"
@@ -23,6 +24,11 @@ type ExpectedBbPluginApiKey =
 
 const EXPECTED_BACKEND_ROOT_TYPE_EXPORTS = [
   "BbPluginApi",
+  "CloudAiCompleteArgs",
+  "CloudAiFailureCode",
+  "CloudAiProvider",
+  "CloudAiResult",
+  "CloudAiTranscribeArgs",
   "PluginAgents",
   "PluginAgentConfiguration",
   "PluginAgentConfigurationContext",

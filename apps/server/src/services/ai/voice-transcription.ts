@@ -5,11 +5,13 @@ import {
   parseProviderModelConfig,
   type ProviderModelInfo,
 } from "@bb/config/inference-model";
+import type { CloudAiFailureCode, CloudAiProvider } from "@bb/plugin-sdk";
 import type { LoggedWorkSessionDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import { runLiveCommandAndWait } from "../hosts/live-command-wait.js";
 import { requireConnectedPrimaryHostId } from "../hosts/primary-host.js";
 import { runtimeErrorLogFields } from "../lib/error-log-fields.js";
+import { getAvailableCloudAiProvider } from "./cloud-ai-provider.js";
 import { backsHostDaemonAiServices } from "./host-daemon-ai-provider.js";
 
 interface TranscribeVoiceInputArgs {
@@ -25,6 +27,9 @@ const CODEX_VOICE_TRANSCRIPTION_ATTEMPT_TIMEOUT_MS = 10_000;
 const CODEX_VOICE_TRANSCRIPTION_MAX_ATTEMPTS = 2;
 const CODEX_VOICE_TRANSCRIPTION_RETRY_DELAY_MS = 250;
 const OPENAI_VOICE_TRANSCRIPTION_TIMEOUT_MS = 10_000;
+// Larger than the local budgets: the audio uploads through the bb Cloud gate
+// before the upstream model sees it.
+const CLOUD_VOICE_TRANSCRIPTION_TIMEOUT_MS = 20_000;
 
 function parseTranscriptionModel(model: string): ProviderModelInfo {
   return parseProviderModelConfig({
@@ -44,7 +49,7 @@ function isCodexVoiceTranscriptionAvailable(
   }
 }
 
-export function resolveVoiceTranscriptionEnabled(
+function resolveLocalVoiceTranscriptionEnabled(
   deps: LoggedWorkSessionDeps,
 ): boolean {
   const modelInfo = parseTranscriptionModel(deps.config.transcriptionModel);
@@ -55,6 +60,15 @@ export function resolveVoiceTranscriptionEnabled(
     return deps.config.openAiApiKey.length > 0;
   }
   return false;
+}
+
+export function resolveVoiceTranscriptionEnabled(
+  deps: LoggedWorkSessionDeps,
+): boolean {
+  return (
+    getAvailableCloudAiProvider() !== null ||
+    resolveLocalVoiceTranscriptionEnabled(deps)
+  );
 }
 
 function trimPrompt(prompt: string | undefined): string | null {
@@ -270,6 +284,66 @@ async function transcribeWithOpenAi(
   return text;
 }
 
+type CloudAiTranscriptionOutcome =
+  | { ok: true; text: string }
+  | { ok: false; code: CloudAiFailureCode };
+
+/** Cloud transcription attempt; timeouts throw the standard 504 directly
+ * (voice is interactive — stacking a local attempt after 20s is worse than
+ * failing fast). */
+async function transcribeWithCloudAi(
+  deps: LoggedWorkSessionDeps,
+  provider: CloudAiProvider,
+  args: TranscribeVoiceInputArgs,
+): Promise<CloudAiTranscriptionOutcome> {
+  const abortController = new AbortController();
+  const timer = setTimeout(
+    () => abortController.abort(),
+    CLOUD_VOICE_TRANSCRIPTION_TIMEOUT_MS,
+  );
+  timer.unref();
+  const prompt = trimPrompt(args.prompt);
+  let result: Awaited<ReturnType<CloudAiProvider["transcribe"]>>;
+  try {
+    result = await provider.transcribe({
+      file: args.file,
+      ...(prompt !== null ? { prompt } : {}),
+      signal: abortController.signal,
+    });
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      throw buildTranscriptionTimeoutError();
+    }
+    deps.logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      "Cloud AI provider threw; falling back to local transcription",
+    );
+    return { ok: false, code: "unavailable" };
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!result.ok) {
+    deps.logger.warn(
+      { code: result.code },
+      "Cloud AI transcription failed; falling back to local transcription",
+    );
+    return { ok: false, code: result.code };
+  }
+  return { ok: true, text: result.value };
+}
+
+function cloudTranscriptionApiError(code: CloudAiFailureCode): ApiError {
+  if (code === "quota_exhausted") {
+    return new ApiError(
+      503,
+      "transcription_unavailable",
+      "Daily bb Cloud AI budget reached. Try again tomorrow or configure a local transcription provider.",
+      true,
+    );
+  }
+  return buildTranscriptionUnavailableError();
+}
+
 export async function transcribeVoiceInput(
   deps: LoggedWorkSessionDeps,
   args: TranscribeVoiceInputArgs,
@@ -279,6 +353,18 @@ export async function transcribeVoiceInput(
   }
   if (args.file.size > VOICE_TRANSCRIPTION_MAX_BYTES) {
     throw new ApiError(400, "invalid_request", "Audio file exceeds 25MB limit");
+  }
+
+  const cloudProvider = getAvailableCloudAiProvider();
+  if (cloudProvider !== null) {
+    const cloud = await transcribeWithCloudAi(deps, cloudProvider, args);
+    if (cloud.ok) {
+      return cloud.text;
+    }
+    if (!resolveLocalVoiceTranscriptionEnabled(deps)) {
+      throw cloudTranscriptionApiError(cloud.code);
+    }
+    // Locally configured provider available — fall through to it.
   }
 
   const modelInfo = parseTranscriptionModel(deps.config.transcriptionModel);

@@ -1,5 +1,10 @@
+import type { CloudAiProvider, CloudAiResult, JsonValue } from "@bb/plugin-sdk";
 import { Type } from "@earendil-works/pi-ai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  registerCloudAiProvider,
+  resetCloudAiProviderForTests,
+} from "../../src/services/ai/cloud-ai-provider.js";
 import {
   InferenceTimeoutError,
   inferenceComplete,
@@ -124,6 +129,161 @@ describe("inferenceComplete", () => {
       });
 
       await completionExpectation;
+    });
+  });
+});
+
+describe("inferenceComplete cloud provider routing", () => {
+  afterEach(() => {
+    resetCloudAiProviderForTests();
+  });
+
+  function stubProvider(over: {
+    available?: boolean;
+    complete?: CloudAiProvider["complete"];
+  }): CloudAiProvider & { completeCalls: number } {
+    const provider = {
+      completeCalls: 0,
+      isAvailable: () => over.available ?? true,
+      async complete(
+        args: Parameters<CloudAiProvider["complete"]>[0],
+      ): Promise<CloudAiResult<JsonValue>> {
+        provider.completeCalls += 1;
+        if (over.complete) return over.complete(args);
+        return { ok: true, value: { title: "Cloud title" } };
+      },
+      async transcribe(): Promise<CloudAiResult<string>> {
+        throw new Error("not under test");
+      },
+    };
+    return provider;
+  }
+
+  it("routes through an available provider instead of the codex daemon", async () => {
+    // codex model configured and NO host connected: success proves the daemon
+    // path was never consulted (it would throw host_unavailable).
+    await withTestHarness({
+      inferenceModel: "codex/gpt-5.4-mini",
+    }, async (harness) => {
+      const provider = stubProvider({});
+      registerCloudAiProvider("connect", provider);
+      let sentSchema: JsonValue | null = null;
+      provider.complete = async (args) => {
+        provider.completeCalls += 1;
+        sentSchema = args.schema;
+        return { ok: true, value: { title: "Cloud title" } };
+      };
+
+      await expect(
+        inferenceComplete(harness.deps, {
+          prompt: "Generate a title",
+          schema: titleSchema,
+          timeoutMs: 5000,
+        }),
+      ).resolves.toEqual({ title: "Cloud title" });
+      expect(sentSchema).toMatchObject({ type: "object" });
+    });
+  });
+
+  it("skips an unavailable provider and returns null on invalid results", async () => {
+    await withTestHarness(async (harness) => {
+      const unavailable = stubProvider({ available: false });
+      registerCloudAiProvider("connect", unavailable);
+      // Local config is test/mock-model (unsupported) → local path yields null.
+      await expect(
+        inferenceComplete(harness.deps, {
+          prompt: "Generate a title",
+          schema: titleSchema,
+        }),
+      ).resolves.toBeNull();
+      expect(unavailable.completeCalls).toBe(0);
+
+      const invalidResult = stubProvider({
+        complete: async () => ({ ok: true, value: { wrong: 1 } }),
+      });
+      registerCloudAiProvider("connect", invalidResult);
+      await expect(
+        inferenceComplete(harness.deps, {
+          prompt: "Generate a title",
+          schema: titleSchema,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
+  it("falls through to local on provider failure or a provider bug", async () => {
+    await withTestHarness(async (harness) => {
+      const failing = stubProvider({
+        complete: async () => ({
+          ok: false,
+          code: "quota_exhausted",
+          message: "budget reached",
+        }),
+      });
+      registerCloudAiProvider("connect", failing);
+      await expect(
+        inferenceComplete(harness.deps, {
+          prompt: "Generate a title",
+          schema: titleSchema,
+        }),
+      ).resolves.toBeNull();
+      expect(failing.completeCalls).toBe(1);
+
+      const throwing = stubProvider({
+        complete: async () => {
+          throw new Error("plugin bug");
+        },
+      });
+      registerCloudAiProvider("connect", throwing);
+      await expect(
+        inferenceComplete(harness.deps, {
+          prompt: "Generate a title",
+          schema: titleSchema,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
+  it("turns a provider timeout into InferenceTimeoutError without local fallback", async () => {
+    await withTestHarness(async (harness) => {
+      registerCloudAiProvider(
+        "connect",
+        stubProvider({
+          complete: (args) =>
+            new Promise((_, reject) => {
+              args.signal.addEventListener("abort", () => {
+                reject(new DOMException("aborted", "AbortError"));
+              });
+            }),
+        }),
+      );
+
+      await expect(
+        inferenceComplete(harness.deps, {
+          prompt: "Generate a title",
+          schema: titleSchema,
+          timeoutMs: 50,
+        }),
+      ).rejects.toBeInstanceOf(InferenceTimeoutError);
+    });
+  });
+
+  it("stale unregister hooks cannot tear down a newer registration", async () => {
+    await withTestHarness(async (harness) => {
+      const first = stubProvider({});
+      const unregisterFirst = registerCloudAiProvider("connect", first);
+      const second = stubProvider({});
+      registerCloudAiProvider("connect", second);
+      unregisterFirst();
+
+      await expect(
+        inferenceComplete(harness.deps, {
+          prompt: "Generate a title",
+          schema: titleSchema,
+        }),
+      ).resolves.toEqual({ title: "Cloud title" });
+      expect(second.completeCalls).toBe(1);
+      expect(first.completeCalls).toBe(0);
     });
   });
 });

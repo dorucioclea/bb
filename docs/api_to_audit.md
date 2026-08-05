@@ -253,3 +253,32 @@ other pane's copy (or release its owned state). The thread-list slot omits it
 deliberately: it mounts once, and a crash there should disable it everywhere.
 Confirm that split before stabilizing, and decide whether other multi-mount
 slots need the same treatment.
+
+## `bb.experimental_registerCloudAiProvider`
+
+**What it does.** Registers a cloud route for bb's small AI tasks (thread-title
+inference, commit-message inference, voice transcription). Per call, when the
+provider's synchronous `isAvailable()` is true, the host tries it before the
+locally configured `BB_INFERENCE`/`BB_TRANSCRIPTION` providers; an `ok: false`
+result falls through to those, and host-side timeouts keep the host's existing
+timeout semantics. Single slot host-wide: the most recent registration wins,
+and the registration is torn down with the plugin's dispose hooks. The
+contract is result-shaped (no thrown error classes) so it survives plugin
+bundling. Shipped for the builtin connect plugin's bb Cloud routing.
+
+**Audit before stabilizing.**
+
+1. **Registration policy.** Any plugin may currently claim the slot, which
+   reroutes prompt/diff/audio content to plugin-chosen infrastructure. Decide
+   whether the slot needs a permission gate, builtin-only restriction, or a
+   user-visible indicator of which plugin holds it.
+2. **Single-slot semantics.** Last-registration-wins is the simplest rule;
+   confirm it against multiple plugins wanting the slot (priority? explicit
+   user choice?) before freezing.
+3. **Failure vocabulary.** `unauthorized | quota_exhausted | unavailable`
+   drives fallback routing. Confirm the set is sufficient (rate limiting?
+   partial availability per capability?) — codes are additive-only after
+   stabilization.
+4. **Capability granularity.** One provider currently covers completion and
+   transcription together; decide whether providers should be able to offer
+   one without the other.

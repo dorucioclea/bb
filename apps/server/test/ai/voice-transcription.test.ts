@@ -1,8 +1,16 @@
 import { Buffer } from "node:buffer";
 import type { HostDaemonOnlineRpcRequestMessage } from "@bb/host-daemon-contract";
-import { describe, expect, it, vi } from "vitest";
+import type { CloudAiProvider, CloudAiResult } from "@bb/plugin-sdk";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/errors.js";
-import { transcribeVoiceInput } from "../../src/services/ai/voice-transcription.js";
+import {
+  registerCloudAiProvider,
+  resetCloudAiProviderForTests,
+} from "../../src/services/ai/cloud-ai-provider.js";
+import {
+  resolveVoiceTranscriptionEnabled,
+  transcribeVoiceInput,
+} from "../../src/services/ai/voice-transcription.js";
 import {
   registerHostRpcResponder,
   type HostRpcResponder,
@@ -267,6 +275,159 @@ describe("voice transcription", () => {
     } finally {
       vi.unstubAllGlobals();
       setTimeoutSpy.mockRestore();
+      await harness.cleanup();
+    }
+  });
+});
+
+describe("voice transcription cloud provider routing", () => {
+  afterEach(() => {
+    resetCloudAiProviderForTests();
+  });
+
+  function stubProvider(over: {
+    available?: boolean;
+    transcribe?: CloudAiProvider["transcribe"];
+  }): CloudAiProvider {
+    return {
+      isAvailable: () => over.available ?? true,
+      async complete(): Promise<CloudAiResult<never>> {
+        throw new Error("not under test");
+      },
+      async transcribe(
+        args: Parameters<CloudAiProvider["transcribe"]>[0],
+      ): Promise<CloudAiResult<string>> {
+        if (over.transcribe) return over.transcribe(args);
+        return { ok: true, value: "hello cloud" };
+      },
+    };
+  }
+
+  it("transcribes through an available provider with the trimmed prompt", async () => {
+    const harness = await createTestAppHarness({});
+    try {
+      let sentPrompt: string | undefined;
+      registerCloudAiProvider(
+        "connect",
+        stubProvider({
+          transcribe: async (args) => {
+            sentPrompt = args.prompt;
+            return { ok: true, value: "hello cloud" };
+          },
+        }),
+      );
+      await expect(
+        transcribeVoiceInput(harness.deps, {
+          file: voiceFile(),
+          prompt: "  context  ",
+        }),
+      ).resolves.toBe("hello cloud");
+      expect(sentPrompt).toBe("context");
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  it("falls back to the codex daemon when the provider fails", async () => {
+    const harness = await createCodexTranscriptionHarness({
+      handle(request) {
+        const command = requireCodexVoiceTranscribeCommand(request);
+        return {
+          ok: true,
+          result: { model: command.model, text: "hello daemon" },
+        };
+      },
+    });
+    try {
+      registerCloudAiProvider(
+        "connect",
+        stubProvider({
+          transcribe: async () => ({
+            ok: false,
+            code: "quota_exhausted",
+            message: "budget reached",
+          }),
+        }),
+      );
+      await expect(
+        transcribeVoiceInput(harness.deps, { file: voiceFile() }),
+      ).resolves.toBe("hello daemon");
+      expect(harness.requests).toHaveLength(1);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  it("maps quota exhaustion to a retryable 503 when no local provider exists", async () => {
+    const harness = await createTestAppHarness({});
+    try {
+      registerCloudAiProvider(
+        "connect",
+        stubProvider({
+          transcribe: async () => ({
+            ok: false,
+            code: "quota_exhausted",
+            message: "budget reached",
+          }),
+        }),
+      );
+      await transcribeVoiceInput(harness.deps, { file: voiceFile() }).then(
+        () => {
+          throw new Error("Expected transcription to fail");
+        },
+        (error: unknown) => {
+          expectRetryableApiError(error, {
+            code: "transcription_unavailable",
+            status: 503,
+          });
+          expect((error as ApiError).body.message).toContain("budget");
+        },
+      );
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  it("maps a provider timeout to the standard 504 without a local attempt", async () => {
+    const harness = await createTestAppHarness({});
+    try {
+      registerCloudAiProvider(
+        "connect",
+        stubProvider({
+          transcribe: (args) =>
+            new Promise((_, reject) => {
+              args.signal.addEventListener("abort", () => {
+                reject(new DOMException("aborted", "AbortError"));
+              });
+            }),
+        }),
+      );
+      vi.useFakeTimers();
+      const attempt = transcribeVoiceInput(harness.deps, {
+        file: voiceFile(),
+      });
+      const expectation = expect(attempt).rejects.toMatchObject({
+        status: 504,
+        body: { code: "transcription_timeout" },
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+      await harness.cleanup();
+    }
+  });
+
+  it("reports voice transcription enabled from provider availability alone", async () => {
+    const harness = await createTestAppHarness({});
+    try {
+      // Default harness config: unsupported local transcription provider.
+      expect(resolveVoiceTranscriptionEnabled(harness.deps)).toBe(false);
+      registerCloudAiProvider("connect", stubProvider({ available: false }));
+      expect(resolveVoiceTranscriptionEnabled(harness.deps)).toBe(false);
+      registerCloudAiProvider("connect", stubProvider({}));
+      expect(resolveVoiceTranscriptionEnabled(harness.deps)).toBe(true);
+    } finally {
       await harness.cleanup();
     }
   });

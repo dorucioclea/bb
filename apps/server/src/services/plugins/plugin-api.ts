@@ -54,6 +54,7 @@ import type {
 } from "@bb/plugin-sdk";
 import type { BbSdk, ThreadForkArgs, ThreadSpawnArgs } from "@bb/sdk";
 import type { ServerLogger } from "../../types.js";
+import { registerCloudAiProvider } from "../ai/cloud-ai-provider.js";
 import type { PluginInteractionResult } from "../interactions/pending-interactions.js";
 import { appendPluginLogLine } from "./plugin-log.js";
 import {
@@ -1311,6 +1312,11 @@ export function createPluginApi(options: {
     onDispose(hook) {
       assertLive();
       disposeHooks.push(hook);
+    },
+    experimental_registerCloudAiProvider(provider) {
+      assertLive();
+      const unregister = registerCloudAiProvider(pluginId, provider);
+      disposeHooks.push(unregister);
     },
   };
 

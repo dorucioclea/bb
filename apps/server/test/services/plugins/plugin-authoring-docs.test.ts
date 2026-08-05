@@ -67,6 +67,7 @@ const BB_PLUGIN_API_KEYS = [
   "hosts",
   "sdk",
   "onDispose",
+  "experimental_registerCloudAiProvider",
 ] as const satisfies readonly (keyof BbPluginApi)[];
 
 type MissingApiKey = Exclude<

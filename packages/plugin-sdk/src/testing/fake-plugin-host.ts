@@ -1857,6 +1857,11 @@ function createFakePluginHostInternal(
       assertLive();
       disposeHooks.push(hook);
     },
+    experimental_registerCloudAiProvider() {
+      assertLive();
+      // The fake host has no AI chokepoints to route; registration is
+      // accepted and torn down with the host like the real one.
+    },
   };
 
   async function disposeHost(cleanupStorage: boolean): Promise<void> {

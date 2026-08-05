@@ -3,6 +3,7 @@ import {
   parseProviderModelConfig,
   type ProviderModelInfo,
 } from "@bb/config/inference-model";
+import type { CloudAiProvider } from "@bb/plugin-sdk";
 import { validateToolCall } from "@earendil-works/pi-ai";
 import type { Static, TSchema, Tool, ToolCall } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
@@ -10,6 +11,7 @@ import type { AppDeps, LoggedWorkSessionDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import { runLiveCommandAndWait } from "../hosts/live-command-wait.js";
 import { requireConnectedPrimaryHostId } from "../hosts/primary-host.js";
+import { getAvailableCloudAiProvider } from "./cloud-ai-provider.js";
 import { backsHostDaemonAiServices } from "./host-daemon-ai-provider.js";
 
 type BaseInferenceDeps = Pick<AppDeps, "config" | "logger">;
@@ -152,17 +154,93 @@ async function completeWithCodexHostDaemon<T extends TSchema>(
   }
 }
 
+type CloudAiInferenceOutcome<T extends TSchema> =
+  | { ok: true; value: Static<T> | null }
+  | { ok: false };
+
+/**
+ * Structured completion through a registered cloud AI provider (the connect
+ * plugin when paired with bb Cloud). `ok: false` means "fall through to the
+ * locally configured provider". Timeouts throw instead of falling through —
+ * callers own retry budgets and a silent local attempt would double them; the
+ * retry consults the provider again.
+ */
+async function completeWithCloudAi<T extends TSchema>(
+  deps: InferenceCompleteDeps,
+  provider: CloudAiProvider,
+  args: InferenceCompleteArgs<T>,
+): Promise<CloudAiInferenceOutcome<T>> {
+  const timeoutMs = args.timeoutMs ?? DEFAULT_INFERENCE_TIMEOUT_MS;
+  const abortController = new AbortController();
+  const timer = setTimeout(() => abortController.abort(), timeoutMs);
+  timer.unref();
+  let result: Awaited<ReturnType<CloudAiProvider["complete"]>>;
+  try {
+    result = await provider.complete({
+      prompt: args.prompt,
+      schema: parseInferenceSchema(args.schema),
+      signal: abortController.signal,
+    });
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      throw new InferenceTimeoutError({ timeoutMs });
+    }
+    // The provider contract is result-shaped; a throw is a plugin bug. Log it
+    // and use the local provider rather than losing the feature.
+    deps.logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      "Cloud AI provider threw; falling back to local inference",
+    );
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!result.ok) {
+    deps.logger.warn(
+      { code: result.code },
+      "Cloud AI inference failed; falling back to local inference",
+    );
+    return { ok: false };
+  }
+
+  try {
+    return {
+      ok: true,
+      value: validateStructuredResult(
+        args.schema,
+        jsonObjectSchema.parse(result.value),
+      ),
+    };
+  } catch {
+    // Same contract as a model that produced no valid tool call.
+    deps.logger.warn("Cloud AI inference result failed schema validation");
+    return { ok: true, value: null };
+  }
+}
+
 /**
  * Send a prompt to the configured inference model and return structured
  * output validated via a tool call. The model is given a single tool whose
  * parameters match the provided TypeBox schema; the tool call arguments
  * are validated against the schema and returned. Returns `null` if the
  * model is not configured or does not produce a valid tool call.
+ *
+ * A registered cloud AI provider (bb Cloud via the connect plugin) is tried
+ * first when it reports itself available; local provider configuration is the
+ * fallback on cloud failure.
  */
 export async function inferenceComplete<T extends TSchema>(
   deps: InferenceCompleteDeps,
   args: InferenceCompleteArgs<T>,
 ): Promise<Static<T> | null> {
+  const cloudProvider = getAvailableCloudAiProvider();
+  if (cloudProvider !== null) {
+    const outcome = await completeWithCloudAi(deps, cloudProvider, args);
+    if (outcome.ok) {
+      return outcome.value;
+    }
+  }
+
   const modelInfo = parseProviderModelConfig({
     name: "BB_INFERENCE",
     value: deps.config.inferenceModel,
