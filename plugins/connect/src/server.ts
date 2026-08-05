@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@bb/plugin-sdk";
 import { registerConnectCli } from "./cli.js";
+import { CloudAiController } from "./cloud-ai.js";
 import { createKvCredentialStore } from "./credential.js";
 import { connectRpcContract, createRpcHandlers } from "./rpc.js";
 import { ShareRegistry } from "./shares.js";
@@ -28,6 +29,15 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
+  const cloudAi = new CloudAiController({
+    kv: bb.storage.kv,
+    getCredential: () => tunnel.getCredential(),
+    log: bb.log,
+    onChange: () =>
+      bb.realtime.publish(CONNECT_REALTIME_CHANNEL, tunnel.status()),
+  });
+  await cloudAi.init();
+
   tunnel = new ConnectTunnel({
     store,
     shares,
@@ -35,10 +45,20 @@ export default async function plugin(bb: BbPluginApi) {
     log: bb.log,
     onStatusChange: (status) =>
       bb.realtime.publish(CONNECT_REALTIME_CHANNEL, status),
+    getCloudAiEnabled: () => cloudAi.cloudAiEnabled(),
   });
 
-  bb.rpc.register(connectRpcContract, createRpcHandlers(tunnel, hostResolver));
-  registerConnectCli({ bb, tunnel, hostResolver });
+  // While paired (and the AI features setting is on), thread titles, commit
+  // messages, and voice transcription route through bb Cloud; the host falls
+  // back to locally configured providers on failure. Unregistered with this
+  // load's dispose hooks, so disabling the plugin severs cloud AI too.
+  bb.experimental_registerCloudAiProvider(cloudAi);
+
+  bb.rpc.register(
+    connectRpcContract,
+    createRpcHandlers(tunnel, hostResolver, cloudAi),
+  );
+  registerConnectCli({ bb, tunnel, hostResolver, cloudAi });
 
   bb.agents.contributeInstructions(() => {
     const status = tunnel.status();

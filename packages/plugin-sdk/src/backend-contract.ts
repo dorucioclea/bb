@@ -663,7 +663,7 @@ export type CloudAiResult<T> =
 export interface CloudAiCompleteArgs {
   prompt: string;
   /** JSON Schema (top-level `type: "object"`) the structured result must match. */
-  schema: JsonValue;
+  schema: { [key: string]: JsonValue };
   /** Host-owned abort signal; the host maps aborts to its timeout semantics. */
   signal: AbortSignal;
 }

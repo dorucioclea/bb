@@ -39,6 +39,7 @@ function status(overrides: Partial<ConnectStatus> = {}): ConnectStatus {
     remoteClients: 0,
     lastRemoteActivityAt: null,
     shares: [],
+    cloudAiEnabled: true,
     ...overrides,
   };
 }

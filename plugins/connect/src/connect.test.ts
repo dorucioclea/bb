@@ -21,6 +21,7 @@ import {
   SHARES_KV_KEY,
   serverOwnPort,
 } from "./shares.js";
+import { CloudAiController, CLOUD_AI_ENABLED_KV_KEY } from "./cloud-ai.js";
 import { CREDENTIAL_KV_KEY } from "./credential.js";
 import plugin from "./server.js";
 import { ConnectTunnel } from "./tunnel.js";
@@ -2157,7 +2158,7 @@ describe("connect CLI", () => {
     const { harness } = await loadCli();
     const before = await harness.runCli(["status"]);
     expect(before.exitCode).toBe(0);
-    expect(before.stdout).toContain("Not paired");
+    expect(before.stdout).toContain("Not connected to bb Cloud");
 
     const off = await harness.runCli(["off"]);
     expect(off.exitCode).toBe(0);
@@ -2393,5 +2394,224 @@ describe("connect CLI", () => {
     expect(host.harness.sharedPortDeclarations).toEqual([
       { hostId: REMOTE_HOST_ID, ports: [] },
     ]);
+  });
+});
+
+describe("CloudAiController", () => {
+  const CREDENTIAL = {
+    serverUrl: "https://sawyer.getbb.app",
+    handle: "sawyer",
+    credential: "bbcred_secret",
+  };
+
+  function makeController(over: {
+    credential?: typeof CREDENTIAL | null;
+    fetchImpl?: typeof fetch;
+    now?: () => number;
+    store?: Map<string, unknown>;
+  }) {
+    const store = over.store ?? new Map<string, unknown>();
+    const controller = new CloudAiController({
+      kv: {
+        get: async <T>(key: string) => store.get(key) as T | undefined,
+        set: async (key: string, value: unknown) => {
+          store.set(key, value);
+        },
+      },
+      getCredential: () =>
+        over.credential === undefined ? CREDENTIAL : over.credential,
+      log: {
+        debug: () => undefined,
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+      ...(over.fetchImpl ? { fetchImpl: over.fetchImpl } : {}),
+      ...(over.now ? { now: over.now } : {}),
+    });
+    return { controller, store };
+  }
+
+  const completeArgs = {
+    prompt: "Generate a title",
+    schema: { type: "object" as const },
+    signal: new AbortController().signal,
+  };
+
+  it("persists the enabled setting through kv and init", async () => {
+    const { controller, store } = makeController({});
+    await controller.init();
+    expect(controller.cloudAiEnabled()).toBe(true);
+    await controller.setCloudAiEnabled(false);
+    expect(store.get(CLOUD_AI_ENABLED_KV_KEY)).toBe(false);
+
+    const { controller: reloaded } = makeController({ store });
+    await reloaded.init();
+    expect(reloaded.cloudAiEnabled()).toBe(false);
+    expect(reloaded.isAvailable()).toBe(false);
+  });
+
+  it("is unavailable while unpaired and available when paired", async () => {
+    const { controller: unpaired } = makeController({ credential: null });
+    await unpaired.init();
+    expect(unpaired.isAvailable()).toBe(false);
+
+    const { controller: paired } = makeController({});
+    await paired.init();
+    expect(paired.isAvailable()).toBe(true);
+  });
+
+  it("completes through the gate and returns the structured value", async () => {
+    const { controller } = makeController({
+      fetchImpl: (async () =>
+        Response.json({ value: { title: "Cloud title" } })) as typeof fetch,
+    });
+    await controller.init();
+    await expect(controller.complete(completeArgs)).resolves.toEqual({
+      ok: true,
+      value: { title: "Cloud title" },
+    });
+  });
+
+  it("latches a rejected credential until re-pairing changes it", async () => {
+    let credential = CREDENTIAL;
+    const { controller } = makeController({
+      fetchImpl: (async () =>
+        new Response("{}", { status: 401 })) as typeof fetch,
+    });
+    const latching = new CloudAiController({
+      kv: {
+        get: async () => undefined,
+        set: async () => undefined,
+      },
+      getCredential: () => credential,
+      log: {
+        debug: () => undefined,
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+      fetchImpl: (async () =>
+        new Response("{}", { status: 401 })) as typeof fetch,
+    });
+    await latching.init();
+    void controller;
+
+    const failed = await latching.complete(completeArgs);
+    expect(failed).toMatchObject({ ok: false, code: "unauthorized" });
+    expect(latching.isAvailable()).toBe(false);
+
+    // Re-pair writes a fresh credential — the latch clears naturally.
+    credential = { ...CREDENTIAL, credential: "bbcred_new" };
+    expect(latching.isAvailable()).toBe(true);
+  });
+
+  it("cools down after budget exhaustion and recovers", async () => {
+    let now = 1_000_000;
+    const { controller } = makeController({
+      fetchImpl: (async () =>
+        new Response("{}", { status: 429 })) as typeof fetch,
+      now: () => now,
+    });
+    await controller.init();
+
+    const failed = await controller.complete(completeArgs);
+    expect(failed).toMatchObject({ ok: false, code: "quota_exhausted" });
+    expect(controller.isAvailable()).toBe(false);
+    now += 5 * 60 * 1000 + 1;
+    expect(controller.isAvailable()).toBe(true);
+  });
+
+  it("propagates aborts so the host keeps its timeout semantics", async () => {
+    const { controller } = makeController({
+      fetchImpl: (async () => {
+        throw new DOMException("aborted", "AbortError");
+      }) as typeof fetch,
+    });
+    await controller.init();
+    await expect(controller.complete(completeArgs)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+  });
+
+  it("transcribes through the gate and maps transient failures", async () => {
+    const file = new File(["audio"], "recording.webm", { type: "audio/webm" });
+    const signal = new AbortController().signal;
+    const { controller } = makeController({
+      fetchImpl: (async () => Response.json({ text: "hello" })) as typeof fetch,
+    });
+    await controller.init();
+    await expect(controller.transcribe({ file, signal })).resolves.toEqual({
+      ok: true,
+      value: "hello",
+    });
+
+    const { controller: failing } = makeController({
+      fetchImpl: (async () =>
+        new Response("oops", { status: 500 })) as typeof fetch,
+    });
+    await failing.init();
+    await expect(failing.transcribe({ file, signal })).resolves.toMatchObject({
+      ok: false,
+      code: "unavailable",
+    });
+    // Transient failures never latch availability.
+    expect(failing.isAvailable()).toBe(true);
+  });
+});
+
+describe("connect CLI ai subcommand", () => {
+  let host: FakePluginHost | undefined;
+
+  afterEach(async () => {
+    if (host) {
+      const { controller, done } = host.harness.runService("tunnel");
+      controller.abort();
+      await done;
+      await host.harness.dispose();
+      host = undefined;
+    }
+    vi.unstubAllGlobals();
+  });
+
+  async function loadCli(): Promise<FakePluginHost> {
+    host = createConnectFakeHost();
+    await plugin(host.bb as unknown as Parameters<typeof plugin>[0]);
+    return host;
+  }
+
+  it("shows and sets the AI features setting, persisted in kv", async () => {
+    const { harness, bb } = await loadCli();
+    const show = await harness.runCli(["ai"]);
+    expect(show.exitCode).toBe(0);
+    expect(show.stdout).toContain("AI features: on");
+    expect(show.stdout).toContain("no effect until");
+
+    const off = await harness.runCli(["ai", "off"]);
+    expect(off.exitCode).toBe(0);
+    expect(off.stdout).toContain("AI features: off");
+    await expect(bb.storage.kv.get(CLOUD_AI_ENABLED_KV_KEY)).resolves.toBe(
+      false,
+    );
+
+    const json = await harness.runCli(["ai", "--json"]);
+    expect(JSON.parse(json.stdout)).toEqual({
+      cloudAiEnabled: false,
+      paired: false,
+    });
+
+    const invalid = await harness.runCli(["ai", "sideways"]);
+    expect(invalid.exitCode).toBe(1);
+  });
+
+  it("round-trips the setting over rpc and reports it in status", async () => {
+    const { harness } = await loadCli();
+    const before = (await harness.callRpc("status")) as ConnectStatus;
+    expect(before.cloudAiEnabled).toBe(true);
+
+    const after = (await harness.callRpc("setCloudAi", {
+      enabled: false,
+    })) as ConnectStatus;
+    expect(after.cloudAiEnabled).toBe(false);
   });
 });

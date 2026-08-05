@@ -58,6 +58,8 @@ export interface ConnectTunnelOptions {
   log: PluginLogger;
   /** Fired on every state/handle/error/shares/presence transition. */
   onStatusChange?: (status: ConnectStatus) => void;
+  /** The "AI features" setting (CloudAiController); defaults to true. */
+  getCloudAiEnabled?: () => boolean;
 }
 
 /**
@@ -242,6 +244,7 @@ export class ConnectTunnel {
       remoteClients: this.remoteClients,
       lastRemoteActivityAt: this.lastRemoteActivityAt,
       shares,
+      cloudAiEnabled: this.options.getCloudAiEnabled?.() ?? true,
     };
   }
 

@@ -1,4 +1,5 @@
 import type { BbPluginApi, PluginCliResult } from "@bb/plugin-sdk";
+import type { CloudAiController } from "./cloud-ai.js";
 import type { ShareHostResolver } from "./hosts.js";
 import { parseSharePort } from "./shares.js";
 import type { ConnectTunnel } from "./tunnel.js";
@@ -63,15 +64,18 @@ function validateFlags(
 
 function helpText(): string {
   return [
-    "Remote access via getbb.app — this bb becomes reachable at https://<handle>.getbb.app.",
-    "Share HTTP ports from any enrolled host (owner session only).",
+    "Connect this bb to bb Cloud (getbb.app). Once connected: access it from",
+    "anywhere at https://<handle>.getbb.app, share HTTP ports from enrolled",
+    "hosts, and AI features (thread titles, commit messages, voice",
+    "transcription) run through your account.",
     "",
     "  1. Sign in at https://getbb.app and claim a handle.",
     "  2. Copy the connect command from the dashboard and run it here:",
     "       bb connect --code <code> --server https://<handle>.getbb.app",
     "",
-    "  bb connect status              Show remote-access status",
+    "  bb connect status              Show bb Cloud connection status",
     "  bb connect off                 Disconnect and forget the pairing (re-pairing needs a new code)",
+    "  bb connect ai [on|off]         Show or set the AI features setting",
     "  bb connect expose <port> [--host <name-or-id>]    Share a port from the thread's host",
     "  bb connect unexpose <port> [--host <name-or-id>]  Stop sharing a port on that host",
     "  bb connect shares [--host <name-or-id>]           List shares for the thread's host",
@@ -83,9 +87,10 @@ function helpText(): string {
 
 function formatStatus(status: ConnectStatus): string {
   if (!status.paired) {
-    return "Not paired\nPair from the getbb.app dashboard — run `bb connect` for a how-to.";
+    return "Not connected to bb Cloud\nPair from the getbb.app dashboard — run `bb connect` for a how-to.";
   }
   const lines = [`${status.handle}  ${status.url}  ${status.state}`];
+  lines.push(`  ai features: ${status.cloudAiEnabled ? "on" : "off"}`);
   if (status.lastError !== null && status.state !== "connected") {
     lines.push(`  last error: ${status.lastError}`);
   }
@@ -112,8 +117,9 @@ export function registerConnectCli(args: {
   bb: Pick<BbPluginApi, "cli">;
   tunnel: ConnectTunnel;
   hostResolver: ShareHostResolver;
+  cloudAi: CloudAiController;
 }): void {
-  const { bb, tunnel, hostResolver } = args;
+  const { bb, tunnel, hostResolver, cloudAi } = args;
   bb.cli.register({
     name: "connect",
     summary:
@@ -128,6 +134,12 @@ export function registerConnectCli(args: {
         name: "off",
         summary: "Disconnect and forget the pairing",
         usage: "bb connect off [--json]",
+      },
+      {
+        name: "ai",
+        summary:
+          "Show or set the AI features setting (titles, commit messages, voice via bb Cloud)",
+        usage: "bb connect ai [on|off] [--json]",
       },
       {
         name: "expose",
@@ -173,6 +185,43 @@ export function registerConnectCli(args: {
             stdout: parsed.flags.has("json")
               ? asJson(status)
               : "Disconnected\n",
+          };
+        }
+        if (first === "ai") {
+          const value = argv[1];
+          const flagStart = value === "on" || value === "off" ? 2 : 1;
+          if (
+            value !== undefined &&
+            value !== "on" &&
+            value !== "off" &&
+            !value.startsWith("--")
+          ) {
+            return {
+              exitCode: 1,
+              stderr: "Usage: bb connect ai [on|off] [--json]\n",
+            };
+          }
+          const parsed = parseFlags(argv.slice(flagStart));
+          validateFlags(parsed, { boolean: ["json"] });
+          if (value === "on" || value === "off") {
+            await cloudAi.setCloudAiEnabled(value === "on");
+          }
+          const status = tunnel.status();
+          if (parsed.flags.has("json")) {
+            return {
+              exitCode: 0,
+              stdout: asJson({
+                cloudAiEnabled: status.cloudAiEnabled,
+                paired: status.paired,
+              }),
+            };
+          }
+          const effect = status.paired
+            ? ""
+            : " (no effect until this bb is connected to bb Cloud)";
+          return {
+            exitCode: 0,
+            stdout: `AI features: ${status.cloudAiEnabled ? "on" : "off"}${effect}\n`,
           };
         }
         if (first === "expose") {

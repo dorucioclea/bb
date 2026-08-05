@@ -1,6 +1,6 @@
 // bb-plugin-connect — the frontend bundle.
 //
-// One settingsSection "Remote access", driven by the `status` rpc and live
+// One settingsSection "bb Cloud", driven by the `status` rpc and live
 // `connect` realtime pushes. Four states, each matched to the redesign mock:
 // not paired (promise + two numbered steps + auto-submitting code field),
 // pairing (inline typed-code errors), connected (URL hero chip + QR toggle +
@@ -30,6 +30,7 @@ import {
 } from "@bb/shared-ui/dialog";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
+import { Switch } from "@bb/shared-ui/switch";
 import { cn } from "@bb/shared-ui/lib/utils";
 import {
   CONNECT_REALTIME_CHANNEL,
@@ -110,6 +111,7 @@ function asStatus(payload: unknown): ConnectStatus | null {
     handle?: unknown;
     url?: unknown;
     dashboardUrl?: unknown;
+    cloudAiEnabled?: unknown;
     lastError?: unknown;
     nextRetryAt?: unknown;
     since?: unknown;
@@ -176,6 +178,8 @@ function asStatus(payload: unknown): ConnectStatus | null {
         ? record.lastRemoteActivityAt
         : null,
     shares,
+    cloudAiEnabled:
+      typeof record.cloudAiEnabled === "boolean" ? record.cloudAiEnabled : true,
   };
 }
 
@@ -948,6 +952,8 @@ function ConnectedContent({
 
       <SharedPortsSection shares={status.shares} dimmed={false} />
 
+      <CloudAiSection status={status} onChanged={onChanged} />
+
       <div className="-mx-4 mt-4 flex items-center gap-3 border-t border-border-seam px-4 pt-3">
         <span className="min-w-0 text-xs text-muted-foreground">
           Disconnecting forgets this bb&apos;s credential.
@@ -974,6 +980,59 @@ function ConnectedContent({
         pending={disconnecting}
         onConfirm={disconnect}
       />
+    </div>
+  );
+}
+
+function CloudAiSection({
+  status,
+  onChanged,
+}: {
+  status: ConnectStatus;
+  onChanged: () => void;
+}) {
+  const rpc = useRpc<typeof connectRpcContract>();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const setEnabled = useCallback(
+    (enabled: boolean) => {
+      setPending(true);
+      setError(null);
+      rpc.call("setCloudAi", { enabled }).then(
+        () => {
+          setPending(false);
+          onChanged();
+        },
+        (rpcError: unknown) => {
+          setPending(false);
+          setError(errorText(rpcError));
+        },
+      );
+    },
+    [rpc, onChanged],
+  );
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">AI features</p>
+          <p className="text-xs text-muted-foreground">
+            Thread titles, commit messages, and voice transcription run through
+            bb Cloud. When off, bb uses your locally configured AI providers.
+          </p>
+        </div>
+        <Switch
+          checked={status.cloudAiEnabled}
+          disabled={pending}
+          onCheckedChange={setEnabled}
+          aria-label="AI features"
+        />
+      </div>
+      {error !== null ? (
+        <p className="text-xs text-destructive-text">{error}</p>
+      ) : null}
     </div>
   );
 }
@@ -1171,15 +1230,16 @@ function ConnectSettingsSection() {
 
 export default definePluginApp((app) => {
   app.slots.settingsSection({
+    // Kept as "remote-access" so existing settings deep links stay valid.
     id: "remote-access",
-    title: "Remote access",
+    title: "bb Cloud",
     description:
-      "Use this bb from any device, anywhere — powered by getbb.app.",
+      "Access this bb from anywhere, pair devices, and run AI features through your getbb.app account.",
     component: ConnectSettingsSection,
   });
   app.slots.sidebarFooterAction({
     id: "remote-access",
-    title: "Remote access",
+    title: "bb Cloud",
     icon: "Smartphone",
     run({ openSettings }) {
       openSettings();

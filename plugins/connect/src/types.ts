@@ -64,6 +64,12 @@ export interface ConnectStatus {
   lastRemoteActivityAt: number | null;
   /** Currently registered port shares (URL requires a pairing). */
   shares: ConnectShareStatus[];
+  /**
+   * The "AI features" setting: route thread titles, commit messages, and
+   * voice transcription through bb Cloud while paired. User preference —
+   * true even while unpaired (it simply has no effect then).
+   */
+  cloudAiEnabled: boolean;
 }
 
 export const CONNECT_REALTIME_CHANNEL = "connect";

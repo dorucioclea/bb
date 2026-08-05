@@ -5,6 +5,7 @@ import {
   type DesktopSession,
   type ListAccountServersResult,
 } from "@bb/connect-client";
+import type { CloudAiController } from "./cloud-ai.js";
 import { ConnectPairError } from "./redeem.js";
 import type { ConnectTunnel } from "./tunnel.js";
 import type { ConnectStatus } from "./types.js";
@@ -55,6 +56,7 @@ const connectStatusSchema: z.ZodType<ConnectStatus> = z
     remoteClients: z.number().int(),
     lastRemoteActivityAt: z.number().nullable(),
     shares: z.array(connectShareStatusSchema),
+    cloudAiEnabled: z.boolean(),
   })
   .strict();
 
@@ -133,6 +135,10 @@ export const connectRpcContract = defineRpcContract({
     input: revokeMachineInputSchema,
     output: z.object({ ok: z.literal(true) }).strict(),
   },
+  setCloudAi: {
+    input: z.object({ enabled: z.boolean() }).strict(),
+    output: connectStatusSchema,
+  },
 });
 
 export type ConnectRpcHandlers = PluginRpcHandlers<typeof connectRpcContract>;
@@ -140,6 +146,7 @@ export type ConnectRpcHandlers = PluginRpcHandlers<typeof connectRpcContract>;
 export function createRpcHandlers(
   tunnel: ConnectTunnel,
   hostResolver: ShareHostResolver,
+  cloudAi: CloudAiController,
 ): ConnectRpcHandlers {
   return {
     async pair(args) {
@@ -215,6 +222,10 @@ export function createRpcHandlers(
     async revokeMachine(args) {
       await tunnel.revokeMachine(args.machineId);
       return { ok: true };
+    },
+    async setCloudAi(args) {
+      await cloudAi.setCloudAiEnabled(args.enabled);
+      return tunnel.status();
     },
   };
 }
