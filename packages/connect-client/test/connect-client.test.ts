@@ -3,6 +3,8 @@ import {
   ConnectListError,
   ConnectMachineRedeemError,
   deriveConnectBaseUrl,
+  fetchAiInference,
+  fetchAiTranscription,
   listAccountServers,
   redeemMachineCredential,
   serverUrlForHandle,
@@ -181,5 +183,110 @@ describe("redeemMachineCredential", () => {
           ),
       ),
     ).resolves.toMatchObject({ handle: "laptop" });
+  });
+});
+
+describe("fetchAiInference", () => {
+  it("posts prompt+schema with the credential header and no model name", async () => {
+    const fetchImpl = vi.fn(
+      async (_url: string, _init: RequestInit) =>
+        new Response(JSON.stringify({ value: { title: "Hi" } })),
+    );
+    await expect(
+      fetchAiInference(
+        CREDENTIAL,
+        {
+          prompt: "Summarize",
+          schema: { type: "object", properties: {} },
+        },
+        fetchImpl as unknown as typeof fetch,
+      ),
+    ).resolves.toEqual({ title: "Hi" });
+
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe("https://laptop.getbb.app/api/connect/ai/inference");
+    expect(init.method).toBe("POST");
+    expect(
+      (init.headers as Record<string, string>)["x-bb-connect-machine"],
+    ).toBe("bbcm_desktop");
+    expect(JSON.parse(String(init.body))).toEqual({
+      prompt: "Summarize",
+      schema: { type: "object", properties: {} },
+    });
+  });
+
+  it("maps statuses to stable codes", async () => {
+    const cases: Array<[number, string]> = [
+      [401, "unauthorized"],
+      [403, "unauthorized"],
+      [429, "quota_exhausted"],
+      [500, "server_error"],
+    ];
+    for (const [status, code] of cases) {
+      await expect(
+        fetchAiInference(
+          CREDENTIAL,
+          { prompt: "p", schema: {} },
+          async () => new Response("{}", { status }),
+        ),
+      ).rejects.toMatchObject({ name: "ConnectAiError", code, status });
+    }
+  });
+
+  it("rejects malformed bodies and network failures with typed codes", async () => {
+    await expect(
+      fetchAiInference(
+        CREDENTIAL,
+        { prompt: "p", schema: {} },
+        async () => new Response(JSON.stringify({ value: "not-an-object" })),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_response" });
+    await expect(
+      fetchAiInference(CREDENTIAL, { prompt: "p", schema: {} }, async () => {
+        throw new Error("socket hang up");
+      }),
+    ).rejects.toMatchObject({ code: "network" });
+  });
+
+  it("re-throws aborts untouched so callers keep timeout semantics", async () => {
+    await expect(
+      fetchAiInference(CREDENTIAL, { prompt: "p", schema: {} }, async () => {
+        throw new DOMException("aborted", "AbortError");
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("fetchAiTranscription", () => {
+  it("posts multipart with filename and optional prompt", async () => {
+    const fetchImpl = vi.fn(
+      async (_url: string, _init: RequestInit) =>
+        new Response(JSON.stringify({ text: "hello" })),
+    );
+    const file = new File(["audio"], "recording.webm", { type: "audio/webm" });
+    await expect(
+      fetchAiTranscription(
+        CREDENTIAL,
+        { file, prompt: "ctx" },
+        fetchImpl as unknown as typeof fetch,
+      ),
+    ).resolves.toBe("hello");
+
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe("https://laptop.getbb.app/api/connect/ai/transcription");
+    const form = init.body as FormData;
+    expect((form.get("file") as File).name).toBe("recording.webm");
+    expect(form.get("prompt")).toBe("ctx");
+  });
+
+  it("maps a 429 to quota_exhausted", async () => {
+    const file = new File(["audio"], "recording.webm", { type: "audio/webm" });
+    await expect(
+      fetchAiTranscription(
+        CREDENTIAL,
+        { file },
+        async () => new Response("{}", { status: 429 }),
+      ),
+    ).rejects.toMatchObject({ code: "quota_exhausted" });
   });
 });
