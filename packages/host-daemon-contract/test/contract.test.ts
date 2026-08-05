@@ -1036,10 +1036,10 @@ describe("host-daemon local schemas", () => {
 });
 
 describe("host-daemon command schemas", () => {
-  // Version 76 adds model-scoped/duration-aware provider usage windows and
-  // structured account rate-limit events on top of version 75's grantable
-  // Claude sandbox network prompts.
-  it("uses protocol version 76 for provider usage and rate-limit events", () => {
+  // Version 76 adds structured provider account rate-limit events to runtime
+  // session messages on top of version 75's grantable Claude sandbox network
+  // prompts. Daemons on protocol 75 cannot send the new event shape.
+  it("uses protocol version 76 for provider rate-limit events", () => {
     expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(76);
   });
 
