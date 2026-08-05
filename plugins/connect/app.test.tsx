@@ -371,6 +371,6 @@ describe("connect settings section", () => {
     await slot.emitRealtime(CONNECT_REALTIME_CHANNEL, currentStatus);
 
     await slot.findByText("Get a connect code");
-    await slot.findByText("Remote access disconnected");
+    await slot.findByText("Disconnected from bb Cloud");
   });
 });

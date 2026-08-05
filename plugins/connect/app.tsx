@@ -1172,7 +1172,7 @@ function ConnectSettingsSection() {
   const showDisconnected = useCallback(() => {
     // Transient inline receipt (the SDK exposes no toast on this surface):
     // the silhouette-identical card swap no longer passes silently.
-    setFlash("Remote access disconnected");
+    setFlash("Disconnected from bb Cloud");
     if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current);
     flashTimerRef.current = setTimeout(() => setFlash(null), 4000);
   }, []);

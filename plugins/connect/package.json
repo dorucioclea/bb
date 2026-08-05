@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Remote access via getbb.app \u2014 this bb becomes reachable at https://<handle>.getbb.app. Disable to cut off all remote access.",
+  "description": "bb Cloud (getbb.app) \u2014 access this bb from anywhere at https://<handle>.getbb.app, share ports, and run AI features through your account. Disable to cut off all bb Cloud capabilities.",
   "engines": {
     "bb": ">=0.0"
   },
   "bb": {
-    "name": "Remote access",
-    "description": "Remote access via getbb.app \u2014 this bb becomes reachable at https://<handle>.getbb.app. Disable to cut off all remote access.",
+    "name": "bb Cloud",
+    "description": "bb Cloud (getbb.app) \u2014 access this bb from anywhere at https://<handle>.getbb.app, share ports, and run AI features through your account. Disable to cut off all bb Cloud capabilities.",
     "branding": {
       "icon": "Smartphone"
     },

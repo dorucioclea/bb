@@ -118,11 +118,13 @@ Every inspection command accepts an arbitrary environment ID and supports
 prints UTF-8 content directly and labels base64 binary content; diff and patch
 truncation markers are preserved.
 
-Remote access (bb connect):
+bb Cloud (bb connect):
 
-  Expose this bb server at <handle>.getbb.app so you can reach it from any
-  browser. Claim a handle at https://getbb.app, copy the connect command it
-  generates, then run it here to
+  Connect this bb server to bb Cloud (getbb.app). Once connected it is
+  reachable from any browser at <handle>.getbb.app, port shares work through
+  the account, and AI features (thread titles, commit messages, voice
+  transcription) run through it. Claim a handle at https://getbb.app, copy the
+  connect command it generates, then run it here to
   pair:
 
   bb connect --code <code> --server https://<handle>.getbb.app
@@ -135,8 +137,9 @@ Remote access (bb connect):
   Without an installed bb, pair via npm:
   `npx -p bb-app@latest bb connect --code <code> --server <url>`.
 
-  bb connect status                       Show the server's connect status
+  bb connect status                       Show the server's bb Cloud status
   bb connect off                          Disconnect and forget the pairing
+  bb connect ai [on|off]                  Show or set the AI features setting
   bb connect expose <port> [--host <name-or-id>]    Share a host's HTTP port
   bb connect unexpose <port> [--host <name-or-id>]  Stop sharing on that host
   bb connect shares [--host <name-or-id>]           List that host's shares
@@ -155,7 +158,13 @@ Remote access (bb connect):
   `bb connect status` shows all shares with host + URL. `shares --json` returns
   the resolved `host` and rows with `hostId`, `hostName`, `port`, and `url`.
 
-  Remote access is owned by the builtin "connect" plugin (Plugins → connect
-  shows the URL, QR code, and shared ports). Disabling the plugin
-  (`bb plugin disable connect`) cuts off all remote access; re-enable with
-  `bb plugin enable connect`.
+  While connected, AI features route thread-title inference, commit-message
+  inference, and voice transcription through the account's bb Cloud AI proxy
+  by default (no local AI credentials needed); bb falls back to the locally
+  configured providers on any cloud failure, and `bb connect ai off` turns
+  the routing off entirely.
+
+  bb Cloud is owned by the builtin "connect" plugin (Settings → bb Cloud
+  shows the URL, QR code, shared ports, and the AI features toggle).
+  Disabling the plugin (`bb plugin disable connect`) cuts off all bb Cloud
+  capabilities; re-enable with `bb plugin enable connect`.

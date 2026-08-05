@@ -151,12 +151,17 @@ isolated|reuse`, or anchor with `--source-seq-end`. Permission mode inherits
   inherited value. A hidden child still reports its turns and blockers to its
   parent thread; only forks and side chats stay silent. Promote or hide an
   existing thread with `bb thread update <id> --visibility visible|hidden`.
-- `bb connect --code <code> --server https://<handle>.getbb.app` pairs this bb
-  server for browser access at `<handle>.getbb.app` (get the code from
+- `bb connect --code <code> --server https://<handle>.getbb.app` connects this
+  bb server to bb Cloud (getbb.app): browser access at `<handle>.getbb.app`,
+  port shares, and AI features through the account (get the code from
   https://getbb.app). Pairing returns immediately — the
   server itself holds the tunnel and reconnects on restart, so there is no
   foreground process.
   `bb connect status` / `bb connect off` report and clear the pairing.
+  While connected, AI features (thread titles, commit messages, voice
+  transcription) route through bb Cloud by default with automatic fallback to
+  locally configured providers; `bb connect ai [on|off]` shows or sets that
+  routing.
   Port sharing works from a thread on any enrolled host. `bb connect expose
 <port>` resolves that thread's environment host and returns its public URL;
   outside a thread it defaults to the server host. Pass `--host
@@ -169,10 +174,11 @@ isolated|reuse`, or anchor with `--source-seq-end`. Permission mode inherits
   name, url, live) so callers can discover siblings; `--json` includes
   `selfHandle` for deduping this server. When you start a local server the user
   should open remotely, expose the port and give them the share URL. Remote
-  access is owned by the builtin `connect` plugin: `bb plugin disable connect`
-  cuts it off entirely; with bb connect still enabled, `bb plugin enable
-  connect` restores the command. Plugins → Connect shows the current URL, QR
-  code, shared ports, re-pair form, and disconnect control.
+  bb Cloud is owned by the builtin `connect` plugin: `bb plugin disable
+  connect` cuts it off entirely (remote access and AI features alike);
+  `bb plugin enable connect` restores it. Settings → bb Cloud shows the
+  current URL, QR code, shared ports, AI features toggle, re-pair form, and
+  disconnect control.
 - Add remote execution machines from Settings → Machines. Its one-line
   installer stores the bb connect machine credential locally and configures
   both the daemon protocol and agent-launched `bb` CLI to traverse the account
