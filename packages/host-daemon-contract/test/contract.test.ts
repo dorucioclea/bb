@@ -1036,13 +1036,11 @@ describe("host-daemon local schemas", () => {
 });
 
 describe("host-daemon command schemas", () => {
-  // Version 75 makes Claude's sandbox network prompt grantable. A daemon on 74
-  // drops the "localSettings" suggestion that carries the grant, so it sends a
-  // permission_grant subject with an empty profile and the user cannot allow
-  // the prompt. The fix lives in the daemon's Claude bridge, so the bump is
-  // what moves an enrolled machine onto it.
-  it("uses protocol version 75 for grantable sandbox network prompts", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(75);
+  // Version 76 adds model-scoped/duration-aware provider usage windows and
+  // structured account rate-limit events on top of version 75's grantable
+  // Claude sandbox network prompts.
+  it("uses protocol version 76 for provider usage and rate-limit events", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(76);
   });
 
   it("binds Plan cancellation to a required turn id and typed result", () => {
