@@ -2857,32 +2857,32 @@ declare const environmentDiffFileQuerySchema: z$1.ZodDiscriminatedUnion<[z$1.Zod
     target: z$1.ZodLiteral<"uncommitted">;
     path: z$1.ZodString;
     side: z$1.ZodEnum<{
-        old: "old";
         new: "new";
+        old: "old";
     }>;
 }, z$1.core.$strip>, z$1.ZodObject<{
     target: z$1.ZodLiteral<"branch_committed">;
     mergeBaseRef: z$1.ZodString;
     path: z$1.ZodString;
     side: z$1.ZodEnum<{
-        old: "old";
         new: "new";
+        old: "old";
     }>;
 }, z$1.core.$strip>, z$1.ZodObject<{
     target: z$1.ZodLiteral<"all">;
     mergeBaseRef: z$1.ZodString;
     path: z$1.ZodString;
     side: z$1.ZodEnum<{
-        old: "old";
         new: "new";
+        old: "old";
     }>;
 }, z$1.core.$strip>, z$1.ZodObject<{
     target: z$1.ZodLiteral<"commit">;
     sha: z$1.ZodString;
     path: z$1.ZodString;
     side: z$1.ZodEnum<{
-        old: "old";
         new: "new";
+        old: "old";
     }>;
 }, z$1.core.$strip>], "target">;
 type EnvironmentDiffFileQuery = z$1.infer<typeof environmentDiffFileQuerySchema>;
@@ -3098,10 +3098,10 @@ declare const environmentPullRequestResponseSchema: z$1.ZodDiscriminatedUnion<[z
         mergeability: z$1.ZodObject<{
             state: z$1.ZodEnum<{
                 unknown: "unknown";
+                blocked: "blocked";
                 draft: "draft";
                 mergeable: "mergeable";
                 conflicts: "conflicts";
-                blocked: "blocked";
             }>;
             mergeStateStatus: z$1.ZodNullable<z$1.ZodEnum<{
                 BEHIND: "BEHIND";
@@ -3120,6 +3120,7 @@ declare const environmentPullRequestResponseSchema: z$1.ZodDiscriminatedUnion<[z
             }>>;
         }, z$1.core.$strict>;
         attention: z$1.ZodEnum<{
+            blocked: "blocked";
             none: "none";
             merged: "merged";
             draft: "draft";
@@ -3127,7 +3128,6 @@ declare const environmentPullRequestResponseSchema: z$1.ZodDiscriminatedUnion<[z
             changes_requested: "changes_requested";
             review_requested: "review_requested";
             conflicts: "conflicts";
-            blocked: "blocked";
             checks_failed: "checks_failed";
             checks_pending: "checks_pending";
             ready_to_merge: "ready_to_merge";
@@ -8282,8 +8282,8 @@ declare const providerRateLimitRecoveryStatusSchema: z$1.ZodObject<{
         status: z$1.ZodEnum<{
             unknown: "unknown";
             warning: "warning";
-            blocked: "blocked";
             allowed: "allowed";
+            blocked: "blocked";
         }>;
         kind: z$1.ZodEnum<{
             unknown: "unknown";
@@ -8298,8 +8298,8 @@ declare const providerRateLimitRecoveryStatusSchema: z$1.ZodObject<{
             status: z$1.ZodEnum<{
                 unknown: "unknown";
                 warning: "warning";
-                blocked: "blocked";
                 allowed: "allowed";
+                blocked: "blocked";
             }>;
             usedPercent: z$1.ZodNullable<z$1.ZodNumber>;
             resetsAtMs: z$1.ZodNullable<z$1.ZodNumber>;
@@ -8308,9 +8308,9 @@ declare const providerRateLimitRecoveryStatusSchema: z$1.ZodObject<{
         reachedReason: z$1.ZodNullable<z$1.ZodString>;
         overageStatus: z$1.ZodNullable<z$1.ZodEnum<{
             warning: "warning";
-            unavailable: "unavailable";
             allowed: "allowed";
             rejected: "rejected";
+            unavailable: "unavailable";
         }>>;
         overageReason: z$1.ZodNullable<z$1.ZodString>;
         observedAtMs: z$1.ZodNumber;
@@ -8332,8 +8332,8 @@ declare const providerRateLimitRecoveryStatusSchema: z$1.ZodObject<{
             status: z$1.ZodEnum<{
                 unknown: "unknown";
                 warning: "warning";
-                blocked: "blocked";
                 allowed: "allowed";
+                blocked: "blocked";
             }>;
             kind: z$1.ZodEnum<{
                 unknown: "unknown";
@@ -8348,8 +8348,8 @@ declare const providerRateLimitRecoveryStatusSchema: z$1.ZodObject<{
                 status: z$1.ZodEnum<{
                     unknown: "unknown";
                     warning: "warning";
-                    blocked: "blocked";
                     allowed: "allowed";
+                    blocked: "blocked";
                 }>;
                 usedPercent: z$1.ZodNullable<z$1.ZodNumber>;
                 resetsAtMs: z$1.ZodNullable<z$1.ZodNumber>;
@@ -8358,9 +8358,9 @@ declare const providerRateLimitRecoveryStatusSchema: z$1.ZodObject<{
             reachedReason: z$1.ZodNullable<z$1.ZodString>;
             overageStatus: z$1.ZodNullable<z$1.ZodEnum<{
                 warning: "warning";
-                unavailable: "unavailable";
                 allowed: "allowed";
                 rejected: "rejected";
+                unavailable: "unavailable";
             }>>;
             overageReason: z$1.ZodNullable<z$1.ZodString>;
             observedAtMs: z$1.ZodNumber;
@@ -12230,7 +12230,7 @@ interface ThreadActionArgs {
     threadId: string;
 }
 interface ThreadContinueAfterRateLimitArgs extends ThreadActionArgs {
-    expectedRequestId: string;
+    failedRequestId: string;
 }
 interface ThreadStatusArgs extends ThreadActionArgs {
     signal?: AbortSignal;
