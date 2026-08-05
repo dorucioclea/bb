@@ -48,7 +48,7 @@ function labelWithSuffix(base: string, ordinal: number): string {
 
 /** Affected-row count from either driver shape: better-sqlite3 `{changes}` or
  * D1 `{meta: {changes}}`. Anything else is a broken driver — fail fast. */
-function affectedRows(result: unknown): number {
+export function affectedRows(result: unknown): number {
   if (typeof result === "object" && result !== null) {
     if ("changes" in result && typeof result.changes === "number") {
       return result.changes;

@@ -626,6 +626,8 @@ function parseStructuredResult(rawText: string): JsonObject {
   return object;
 }
 
+// Copied in apps/connect/src/ai-schema.ts (workers cannot import daemon code).
+// Keep the two in sync.
 function withStrictObjectSchemas(value: JsonValue): JsonValue {
   if (Array.isArray(value)) {
     return value.map((item) => withStrictObjectSchemas(item));

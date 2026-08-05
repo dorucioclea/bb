@@ -10,6 +10,8 @@
 // Secret: wrangler secret put BETTER_AUTH_SECRET [--env staging]
 //         (must equal bb-web's BETTER_AUTH_SECRET — the gate verifies the
 //         session cookie's HMAC with it)
+// Secret: wrangler secret put OPENAI_API_KEY [--env staging]
+//         (upstream key for the /api/connect/ai/* bb Cloud AI proxy)
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bb-connect",

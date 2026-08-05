@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -221,6 +222,25 @@ export const machine = sqliteTable(
   (table) => [index("machine_user_id_idx").on(table.userId)],
 );
 
+/**
+ * Daily bb Cloud AI usage per account, metered as estimated upstream cost in
+ * micro-USD (the abuse ceiling is dollars, so dollars are what we count). One
+ * row per user per UTC day (`day` is "YYYY-MM-DD"); rollover is implicit via
+ * the primary key, no sweeper. Metering only — request/response content is
+ * never stored.
+ */
+export const aiUsage = sqliteTable(
+  "ai_usage",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    costMicroUsd: integer("cost_micro_usd").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.day] })],
+);
+
 /** Append-only audit of security-relevant events (connect, revoke, pair). */
 export const auditLog = sqliteTable(
   "audit_log",
@@ -254,5 +274,6 @@ export const schema = {
   server,
   machine,
   connectCode,
+  aiUsage,
   auditLog,
 };

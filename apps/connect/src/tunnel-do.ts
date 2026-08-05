@@ -17,6 +17,8 @@ export interface Env {
   DB: D1Database;
   BASE_DOMAIN: string;
   BETTER_AUTH_SECRET: string;
+  /** Secret (wrangler secret put): upstream key for the /api/connect/ai proxy. */
+  OPENAI_API_KEY: string;
 }
 
 const TUNNEL_TAG = "tunnel";

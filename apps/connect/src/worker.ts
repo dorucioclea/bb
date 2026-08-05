@@ -17,6 +17,7 @@ import {
 import { serveWithCache } from "./cache.js";
 import { BB_ICON_DATA_URI } from "./bb-icon.js";
 import { handleAssignMachineLabel } from "./machine-label.js";
+import { handleAiInference, handleAiTranscription } from "./ai.js";
 
 export { TunnelDO };
 
@@ -277,6 +278,12 @@ export default {
     }
     if (url.pathname === "/api/connect/machine-label") {
       return handleAssignMachineLabel(request, env);
+    }
+    if (url.pathname === "/api/connect/ai/inference") {
+      return handleAiInference(request, env, ctx);
+    }
+    if (url.pathname === "/api/connect/ai/transcription") {
+      return handleAiTranscription(request, env, ctx);
     }
 
     const host = request.headers.get("host") ?? url.host;

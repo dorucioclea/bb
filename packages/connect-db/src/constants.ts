@@ -77,6 +77,21 @@ export const SERVER_OFFLINE_AFTER_MS = 90 * 1000;
 /** Token prefixes (mirrors bb's host-key convention; distinct namespaces). */
 export const CLOUD_PAT_PREFIX = "bbc_";
 
+/**
+ * bb Cloud AI proxy policy. The daily budget is an abuse ceiling, not a usage
+ * limit: it is sized an order of magnitude above heavy legitimate use (a big
+ * day of titles, commit messages, and voice notes costs well under $0.50) so
+ * no real user ever hits it, while bounding worst-case spend from a leaked
+ * credential or runaway loop. Usage is metered as estimated upstream cost in
+ * micro-USD; the per-request estimate rates live in the gate worker beside the
+ * model choices.
+ */
+export const AI_DAILY_BUDGET_MICROUSD = 2_000_000;
+export const AI_INFERENCE_MAX_PROMPT_BYTES = 64 * 1024;
+export const AI_INFERENCE_MAX_SCHEMA_BYTES = 16 * 1024;
+export const AI_TRANSCRIPTION_MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const AI_TRANSCRIPTION_MAX_PROMPT_BYTES = 4 * 1024;
+
 export type HandleValidationError =
   | "too-short"
   | "too-long"
