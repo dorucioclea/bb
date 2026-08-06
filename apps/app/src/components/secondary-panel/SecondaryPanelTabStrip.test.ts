@@ -22,6 +22,11 @@ describe("secondary panel tab-strip edge fades", () => {
   it("observes the intrinsic tab row so async title changes refresh overflow", () => {
     const observed: Element[] = [];
     let resizeCallback: ResizeObserverCallback | undefined;
+    let animationFrameCallback: FrameRequestCallback | undefined;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      animationFrameCallback = callback;
+      return 1;
+    });
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -110,5 +115,14 @@ describe("secondary panel tab-strip edge fades", () => {
     });
     fireEvent.click(rightButton!);
     expect(scrollBy).toHaveBeenCalledWith({ left: 140, behavior: "smooth" });
+
+    rightButton?.focus();
+    expect(document.activeElement).toBe(rightButton);
+    viewport!.scrollLeft = 120;
+    fireEvent.scroll(viewport!);
+    act(() => animationFrameCallback?.(0));
+    expect(rightButton?.getAttribute("aria-hidden")).toBe("true");
+    expect(leftButton?.getAttribute("aria-hidden")).toBe("false");
+    expect(document.activeElement).toBe(leftButton);
   });
 });

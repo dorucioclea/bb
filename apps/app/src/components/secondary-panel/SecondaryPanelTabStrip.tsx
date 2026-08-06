@@ -100,6 +100,8 @@ export function SecondaryPanelTabStrip({
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef<HTMLDivElement>(null);
+  const leftScrollButtonRef = useRef<HTMLButtonElement>(null);
+  const rightScrollButtonRef = useRef<HTMLButtonElement>(null);
   const [overflow, setOverflow] = useState<TabStripOverflowState>(
     INITIAL_OVERFLOW_STATE,
   );
@@ -223,6 +225,33 @@ export function SecondaryPanelTabStrip({
     }
     activeTabElement.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [activeTabId]);
+
+  // A scroll button can reach its edge while it has keyboard focus. Move focus
+  // before the button becomes an invisible, aria-hidden control.
+  useLayoutEffect(() => {
+    const focusedElement = document.activeElement;
+    const activeTabButton =
+      activeTabRef.current?.querySelector<HTMLButtonElement>("button") ?? null;
+    if (
+      !overflow.canScrollLeft &&
+      focusedElement === leftScrollButtonRef.current
+    ) {
+      (overflow.canScrollRight
+        ? rightScrollButtonRef.current
+        : activeTabButton
+      )?.focus();
+      return;
+    }
+    if (
+      !overflow.canScrollRight &&
+      focusedElement === rightScrollButtonRef.current
+    ) {
+      (overflow.canScrollLeft
+        ? leftScrollButtonRef.current
+        : activeTabButton
+      )?.focus();
+    }
+  }, [overflow.canScrollLeft, overflow.canScrollRight]);
 
   // A plain mouse wheel over the strip should move it sideways. React registers
   // its onWheel listener as passive, so a synthetic handler can't call
@@ -425,12 +454,14 @@ export function SecondaryPanelTabStrip({
         </div>
       </div>
       <TabStripScrollButton
+        buttonRef={leftScrollButtonRef}
         direction="left"
         canScroll={overflow.canScrollLeft}
         className={chevronNoDragClass}
         onClick={() => scrollByStep(-1)}
       />
       <TabStripScrollButton
+        buttonRef={rightScrollButtonRef}
         direction="right"
         canScroll={overflow.canScrollRight}
         className={chevronNoDragClass}
@@ -489,6 +520,7 @@ function SortableFileTab({
 }
 
 interface TabStripScrollButtonProps {
+  buttonRef: RefObject<HTMLButtonElement | null>;
   direction: "left" | "right";
   canScroll: boolean;
   className: string | null;
@@ -496,6 +528,7 @@ interface TabStripScrollButtonProps {
 }
 
 function TabStripScrollButton({
+  buttonRef,
   direction,
   canScroll,
   className,
@@ -505,6 +538,7 @@ function TabStripScrollButton({
     direction === "left" ? "Scroll tabs left" : "Scroll tabs right";
   return (
     <Button
+      ref={buttonRef}
       type="button"
       variant="ghost"
       size="sm"
