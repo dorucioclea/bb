@@ -718,11 +718,14 @@ async function provisionPersonalWorkspace(
     throw error;
   }
 
+  const isGitRepo = await detectGitRepo(targetPath);
+  const isWorktree = isGitRepo ? await detectWorktree(targetPath) : false;
+
   return new ProvisionedHostWorkspace({
     path: targetPath,
     managed: true,
-    isGitRepo: false,
-    isWorktree: false,
+    isGitRepo,
+    isWorktree,
     destroyFn: () => rm(targetPath, { recursive: true, force: true }),
   });
 }

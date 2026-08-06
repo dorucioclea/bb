@@ -7,6 +7,7 @@ import type {
   WorkspaceFileStatusKind,
   WorkspaceStatus,
 } from "@bb/domain";
+import os from "node:os";
 import path from "node:path";
 import {
   getPullRequestForBranch,
@@ -528,7 +529,8 @@ async function readHeadNumstat(
   workspacePath: string,
   timeoutMs?: number,
 ): Promise<string> {
-  const result = await runGit(["diff", "--numstat", "-z", "HEAD", "--"], {
+  const diffBase = await resolveUncommittedDiffBase(workspacePath, timeoutMs);
+  const result = await runGit(["diff", "--numstat", "-z", diffBase, "--"], {
     cwd: workspacePath,
     allowFailure: true,
     timeoutMs,
@@ -544,6 +546,42 @@ async function readHeadNumstat(
     "git_command_failed",
     `git diff --numstat -z HEAD -- failed${detail ? `: ${detail}` : ""}`,
   );
+}
+
+async function resolveUncommittedDiffBase(
+  workspacePath: string,
+  timeoutMs?: number,
+): Promise<string> {
+  const head = await runGit(["rev-parse", "--verify", "HEAD"], {
+    cwd: workspacePath,
+    allowFailure: true,
+    timeoutMs,
+  });
+  if (head.exitCode === 0) {
+    return "HEAD";
+  }
+  if (!isMissingHeadRevisionError(head.stderr)) {
+    const detail = head.stderr.trim();
+    throw new WorkspaceError(
+      "git_command_failed",
+      `git rev-parse --verify HEAD failed${detail ? `: ${detail}` : ""}`,
+    );
+  }
+
+  // An unborn branch has no HEAD tree. Compare the index and working tree to
+  // Git's empty tree so staged files remain visible before the first commit.
+  const emptyTree = await runGit(["hash-object", "-t", "tree", os.devNull], {
+    cwd: workspacePath,
+    timeoutMs,
+  });
+  const emptyTreeSha = emptyTree.stdout.trim();
+  if (emptyTreeSha.length === 0) {
+    throw new WorkspaceError(
+      "git_command_failed",
+      "git hash-object returned no empty tree SHA",
+    );
+  }
+  return emptyTreeSha;
 }
 
 async function readUntrackedNumstatEntries(
@@ -1504,7 +1542,8 @@ export class Workspace {
 
     switch (target.type) {
       case "uncommitted": {
-        const stats = await this.runDiffStatCommands(["HEAD"]);
+        const diffBase = await resolveUncommittedDiffBase(this.path);
+        const stats = await this.runDiffStatCommands([diffBase]);
         return { ...stats, mergeBaseRef: null, untrackedPaths };
       }
       case "branch_committed": {
@@ -1790,7 +1829,10 @@ export class Workspace {
     const diffBase = ["diff", "--no-ext-diff"];
     switch (target.type) {
       case "uncommitted":
-        return { baseArgs: diffBase, rangeArgs: ["HEAD"] };
+        return {
+          baseArgs: diffBase,
+          rangeArgs: [await resolveUncommittedDiffBase(this.path)],
+        };
       case "branch_committed":
       case "all": {
         const mergeBaseRef = await readMergeBaseRef(
@@ -2110,10 +2152,11 @@ export class Workspace {
   private async readUncommittedDiffArtifacts(
     args: DiffOutputLimits & DiffPathSubset,
   ): Promise<[string, string, string]> {
+    const diffBase = await resolveUncommittedDiffBase(this.path);
     return this.readDiffArtifactsIncludingUntracked({
-      diffArgs: ["HEAD", "--"],
-      filesArgs: ["HEAD", "--"],
-      numstatArgs: ["HEAD", "--"],
+      diffArgs: [diffBase, "--"],
+      filesArgs: [diffBase, "--"],
+      numstatArgs: [diffBase, "--"],
       maxDiffBytes: args.maxDiffBytes,
       maxFileListBytes: args.maxFileListBytes,
       paths: args.paths,

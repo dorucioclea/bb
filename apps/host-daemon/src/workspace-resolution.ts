@@ -5,7 +5,7 @@ import type {
   WorkspaceResolutionFailureCode,
 } from "@bb/host-daemon-contract";
 import { workspaceResolutionFailureCodeSchema } from "@bb/host-daemon-contract";
-import { WorkspaceError } from "@bb/host-workspace";
+import { detectGitRepo, WorkspaceError } from "@bb/host-workspace";
 import type { RuntimeEntry, RuntimeManager } from "./runtime-manager.js";
 import {
   CommandDispatchError,
@@ -143,7 +143,11 @@ export async function resolveWorkspaceForCommand(
       },
       args.runtimeManager,
     );
-    if (args.requireGit === true && !entry.workspace.isGitRepo) {
+    if (
+      args.requireGit === true &&
+      !entry.workspace.isGitRepo &&
+      !(await detectGitRepo(entry.workspace.path))
+    ) {
       return {
         ok: false,
         failure: buildWorkspaceResolutionFailure({

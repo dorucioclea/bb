@@ -459,6 +459,13 @@ export async function createHostDaemonApp(
         });
       }
     },
+    onWorkspaceMetadataChanged: ({ environmentId, workspace }) => {
+      sendServerMessage({
+        type: "environment-metadata-change",
+        environmentId,
+        workspace,
+      });
+    },
     onWorkspaceStatusWatchError: ({ error }) => {
       options.logger.warn(
         {
