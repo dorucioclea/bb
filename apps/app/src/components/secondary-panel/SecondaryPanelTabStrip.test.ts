@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, vi } from "vitest";
 import { describe, expect, it } from "vitest";
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe("secondary panel tab-strip edge fades", () => {
-  it("uses the themed edge fade without overlay scroll controls", () => {
+  it("uses the themed edge fade", () => {
     expect(SECONDARY_PANEL_TAB_STRIP_FADE_TONE).toBe("sidebar");
   });
 
@@ -70,10 +70,10 @@ describe("secondary panel tab-strip edge fades", () => {
     ).toBe(true);
     expect(
       container.querySelector('[aria-label="Scroll tabs left"]'),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       container.querySelector('[aria-label="Scroll tabs right"]'),
-    ).toBeNull();
+    ).not.toBeNull();
 
     const rightFade = container.querySelector("[data-overflow-fade='right']");
     expect(rightFade?.classList.contains("opacity-0")).toBe(true);
@@ -86,5 +86,29 @@ describe("secondary panel tab-strip edge fades", () => {
       resizeCallback?.([], {} as ResizeObserver);
     });
     expect(rightFade?.classList.contains("opacity-100")).toBe(true);
+
+    const leftButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Scroll tabs left"]',
+    );
+    const rightButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Scroll tabs right"]',
+    );
+    expect(leftButton?.classList.contains("opacity-0")).toBe(true);
+    expect(leftButton?.tabIndex).toBe(-1);
+    expect(rightButton?.classList.contains("opacity-100")).toBe(true);
+    expect(rightButton?.tabIndex).toBe(0);
+    expect(rightButton?.classList.contains("bg-sidebar")).toBe(true);
+    expect(
+      rightButton?.classList.contains("hover:bg-surface-raised-solid"),
+    ).toBe(true);
+    expect(rightButton?.classList.contains("hover:bg-state-hover")).toBe(false);
+
+    const scrollBy = vi.fn();
+    Object.defineProperty(viewport!, "scrollBy", {
+      configurable: true,
+      value: scrollBy,
+    });
+    fireEvent.click(rightButton!);
+    expect(scrollBy).toHaveBeenCalledWith({ left: 140, behavior: "smooth" });
   });
 });
