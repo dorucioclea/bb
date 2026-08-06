@@ -25,6 +25,7 @@ import { cn } from "@bb/shared-ui/lib/utils";
 import {
   PANEL_COLLAPSE_TRANSITION_CLASS,
   PANEL_RESIZE_HIT_AREA_MARGINS,
+  PANEL_RESIZE_HIT_TARGET_CLASS,
 } from "./panelTransitionTokens";
 import { SECONDARY_PANEL_TOP_CHROME_BACKGROUND_CLASS } from "./panelChromeClasses";
 import { resolveConversationCollapseControl } from "./panelToggleControlState";
@@ -997,15 +998,15 @@ function SecondaryPanelResizeHandle({
       onDragging={onDragging}
       hitAreaMargins={PANEL_RESIZE_HIT_AREA_MARGINS}
       className={cn(
-        "group relative shrink-0 overflow-visible transition-[width,opacity,background-color] before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-['']",
+        "group relative z-[5] shrink-0 overflow-visible transition-[width,opacity,background-color]",
         PANEL_COLLAPSE_TRANSITION_CLASS,
         isConversationCollapsed ? "cursor-default" : "cursor-col-resize",
         matchesSplitDividers
           ? [
               // Match SplitDivider: a one-pixel vertical seam that warms on
-              // hover/drag while the wide pseudo-element keeps it easy to
-              // grab. Collapses away with the panel.
-              "z-[5] bg-border-seam hover:bg-ring/40",
+              // hover/drag while the overlapping child keeps it easy to grab.
+              // Collapses away with the panel.
+              "bg-border-seam hover:bg-ring/40",
               isOpen && !isConversationCollapsed
                 ? "w-px opacity-100"
                 : "pointer-events-none w-0 opacity-0",
@@ -1027,6 +1028,11 @@ function SecondaryPanelResizeHandle({
       )}
       aria-label="Resize thread and right panel"
     >
+      <span
+        aria-hidden
+        data-panel-resize-hit-target=""
+        className={PANEL_RESIZE_HIT_TARGET_CLASS}
+      />
       {matchesSplitDividers ? null : (
         /*
           The panel's persistent left border lives on the content (aside

@@ -180,9 +180,11 @@ vi.mock("react-resizable-panels", async () => {
     );
   };
   const PanelResizeHandle = ({
+    children,
     className,
     id,
   }: {
+    children?: ReactNode;
     className?: string;
     id?: string;
   }) => (
@@ -190,7 +192,9 @@ vi.mock("react-resizable-panels", async () => {
       id={id}
       className={className}
       data-testid="workspace-panel-resize-handle"
-    />
+    >
+      {children}
+    </div>
   );
   return { Panel, PanelGroup, PanelResizeHandle };
 });
@@ -1315,6 +1319,11 @@ describe("SplitThreadArea", () => {
       "split-workspace-empty-panel-state",
     );
     expect(emptyState.textContent).toContain("This pane has no right panel.");
+    expect(
+      screen
+        .getByTestId("workspace-panel-resize-handle")
+        .querySelector("[data-panel-resize-hit-target]"),
+    ).not.toBeNull();
     const pluginToggle = screen
       .getByTestId("split-workspace-panel-toggle")
       .querySelector("button");
