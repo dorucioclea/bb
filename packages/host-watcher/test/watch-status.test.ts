@@ -423,9 +423,10 @@ describe.sequential("watchWorkspaceStatus", () => {
       expect(workspaceRootOptions[0]?.ignore).toBeUndefined();
 
       await runGit({ args: ["init", "-b", "main"], cwd: workspacePath });
+      const canonicalWorkspacePath = await fs.realpath(workspacePath);
       workspaceRootCallbacks[0]?.(null, [
         {
-          path: path.join(workspacePath, ".git"),
+          path: path.join(canonicalWorkspacePath, ".git"),
           type: "create",
         },
       ]);
@@ -437,8 +438,11 @@ describe.sequential("watchWorkspaceStatus", () => {
         WATCH_TEST_TIMEOUT_MS,
       );
       expect(calls[0]).toEqual({
-        changedPaths: [path.join(workspacePath, ".git")],
-        changeKinds: ["workspace-content-changed"],
+        changedPaths: [path.join(canonicalWorkspacePath, ".git")],
+        changeKinds: [
+          "workspace-content-changed",
+          "workspace-git-repository-created",
+        ],
       });
       expect(workspaceRootOptions[1]?.ignore).toContain(".git");
     } finally {
@@ -598,6 +602,7 @@ describe.sequential("watchWorkspaceStatus", () => {
         changeKinds: [
           "workspace-content-changed",
           "workspace-git-changed",
+          "workspace-git-repository-created",
           "shared-git-refs-changed",
         ],
       };

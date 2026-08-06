@@ -267,8 +267,10 @@ describe("WatchManager", () => {
     const gitWorkspace = createFakeWorkspace("/tmp/env-watch");
     const provisionWorkspace = vi
       .fn<NonNullable<WatchManagerOptions["provisionWorkspace"]>>()
-      .mockResolvedValueOnce(plainWorkspace)
-      .mockResolvedValueOnce(gitWorkspace);
+      .mockResolvedValue(plainWorkspace);
+    const refreshWorkspace = vi
+      .fn<NonNullable<WatchManagerOptions["refreshWorkspace"]>>()
+      .mockResolvedValue(gitWorkspace);
     const { hostWatcher } = createFakeHostWatcher({
       watchWorkspaceImplementation: (args) => {
         watchWorkspaceArgs = args;
@@ -280,6 +282,7 @@ describe("WatchManager", () => {
     const manager = new WatchManager({
       hostWatcher,
       provisionWorkspace,
+      refreshWorkspace,
       onWorkspaceMetadataChanged,
       onWorkspaceStatusChanged,
     });
@@ -298,8 +301,28 @@ describe("WatchManager", () => {
       threadStorageTargets: [],
     });
     watchWorkspaceArgs?.onChange({
-      changedPaths: ["/tmp/env-watch/.git"],
+      changedPaths: ["/tmp/env-watch/file.txt"],
       changeKinds: ["workspace-content-changed"],
+      kind: "workspace-status-changed",
+      environmentId: "env-watch",
+    });
+    await vi.waitFor(() => {
+      expect(onWorkspaceStatusChanged).toHaveBeenCalledWith({
+        changeKinds: ["work-status-changed"],
+        environmentId: "env-watch",
+      });
+    });
+    expect(provisionWorkspace).toHaveBeenCalledTimes(1);
+    expect(refreshWorkspace).not.toHaveBeenCalled();
+    expect(onWorkspaceMetadataChanged).not.toHaveBeenCalled();
+    onWorkspaceStatusChanged.mockClear();
+
+    watchWorkspaceArgs?.onChange({
+      changedPaths: ["/tmp/env-watch/.git"],
+      changeKinds: [
+        "workspace-content-changed",
+        "workspace-git-repository-created",
+      ],
       kind: "workspace-status-changed",
       environmentId: "env-watch",
     });
@@ -320,7 +343,8 @@ describe("WatchManager", () => {
         environmentId: "env-watch",
       });
     });
-    expect(provisionWorkspace).toHaveBeenCalledTimes(2);
+    expect(provisionWorkspace).toHaveBeenCalledTimes(1);
+    expect(refreshWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it("suppresses git metadata notifications when the local fingerprint is unchanged", async () => {

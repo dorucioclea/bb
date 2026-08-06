@@ -432,6 +432,8 @@ export async function createHostDaemonApp(
   watchManager = new WatchManager({
     dataDir: options.dataDir,
     hostWatcher: options.hostWatcher,
+    refreshWorkspace: (args) =>
+      runtimeManager.refreshEnvironmentWorkspace(args),
     threadStorageRootPath,
     onThreadStorageChanged: ({ environmentId }) => {
       sendServerMessage({

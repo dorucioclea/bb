@@ -354,16 +354,17 @@ export class WorkspaceStatusWatcher {
     for (const changeKind of changeEvent.changeKinds) {
       this.changeKinds.add(changeKind);
     }
-    this.changeScheduler.schedule();
-    if (
+    const repositoryCreated =
       spec.kind === "workspace-root" &&
       spec.options?.ignore?.includes(".git") !== true &&
       changeEvent.changedPaths.some((changedPath) =>
-        isPathInsideDotGit(this.args.cwd, changedPath),
-      )
-    ) {
+        isPathInsideDotGit(spec.rootPath, changedPath),
+      );
+    if (repositoryCreated) {
+      this.changeKinds.add("workspace-git-repository-created");
       this.promoteToGitWorkspace(spec.rootPath);
     }
+    this.changeScheduler.schedule();
   }
 
   private promoteToGitWorkspace(rootPath: string): void {

@@ -516,7 +516,7 @@ describe("Workspace", () => {
     );
 
     const workspace = new Workspace(repoPath);
-    const status = await workspace.getStatus();
+    const status = await workspace.getStatus({ mergeBaseBranch: "main" });
 
     expect(status.workingTree.state).toBe("dirty_uncommitted");
     expect(status.branch.currentBranch).toBe("main");
@@ -537,6 +537,17 @@ describe("Workspace", () => {
     ]);
     expect(status.workingTree.insertions).toBe(2);
     expect(status.workingTree.deletions).toBe(0);
+    expect(status.mergeBase).toEqual({
+      mergeBaseBranch: "main",
+      baseRef: null,
+      aheadCount: 0,
+      behindCount: 0,
+      hasCommittedUnmergedChanges: false,
+      commits: [],
+      files: [],
+      insertions: 0,
+      deletions: 0,
+    });
   });
 
   it("returns diff content for each supported target", async () => {

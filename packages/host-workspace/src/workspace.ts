@@ -35,6 +35,7 @@ import {
   parsePatchId,
   revParse,
   runGit,
+  type GitCommandResult,
   type NumstatEntry,
   type RunGitOptions,
   runShellPipeline,
@@ -529,45 +530,21 @@ async function readHeadNumstat(
   workspacePath: string,
   timeoutMs?: number,
 ): Promise<string> {
-  const diffBase = await resolveUncommittedDiffBase(workspacePath, timeoutMs);
-  const result = await runGit(["diff", "--numstat", "-z", diffBase, "--"], {
-    cwd: workspacePath,
-    allowFailure: true,
+  const runUncommittedDiff = createUncommittedDiffRunner(
+    workspacePath,
     timeoutMs,
-  });
-  if (result.exitCode === 0) {
-    return result.stdout;
-  }
-  if (isMissingHeadRevisionError(result.stderr)) {
-    return "";
-  }
-  const detail = result.stderr.trim();
-  throw new WorkspaceError(
-    "git_command_failed",
-    `git diff --numstat -z HEAD -- failed${detail ? `: ${detail}` : ""}`,
   );
+  const result = await runUncommittedDiff(
+    (baseRef) => ["diff", "--numstat", "-z", baseRef, "--"],
+    { cwd: workspacePath, timeoutMs },
+  );
+  return result.stdout;
 }
 
-async function resolveUncommittedDiffBase(
+async function readEmptyTreeSha(
   workspacePath: string,
   timeoutMs?: number,
 ): Promise<string> {
-  const head = await runGit(["rev-parse", "--verify", "HEAD"], {
-    cwd: workspacePath,
-    allowFailure: true,
-    timeoutMs,
-  });
-  if (head.exitCode === 0) {
-    return "HEAD";
-  }
-  if (!isMissingHeadRevisionError(head.stderr)) {
-    const detail = head.stderr.trim();
-    throw new WorkspaceError(
-      "git_command_failed",
-      `git rev-parse --verify HEAD failed${detail ? `: ${detail}` : ""}`,
-    );
-  }
-
   // An unborn branch has no HEAD tree. Compare the index and working tree to
   // Git's empty tree so staged files remain visible before the first commit.
   const emptyTree = await runGit(["hash-object", "-t", "tree", os.devNull], {
@@ -582,6 +559,47 @@ async function resolveUncommittedDiffBase(
     );
   }
   return emptyTreeSha;
+}
+
+type UncommittedDiffRunner = (
+  buildArgs: (baseRef: string) => string[],
+  options: RunGitOptions,
+) => Promise<GitCommandResult>;
+
+function createUncommittedDiffRunner(
+  workspacePath: string,
+  defaultTimeoutMs?: number,
+): UncommittedDiffRunner {
+  let emptyTreeShaPromise: Promise<string> | null = null;
+
+  return async (buildArgs, options) => {
+    if (emptyTreeShaPromise !== null) {
+      return runGit(buildArgs(await emptyTreeShaPromise), options);
+    }
+
+    const headArgs = buildArgs("HEAD");
+    const headResult = await runGit(headArgs, {
+      ...options,
+      allowFailure: true,
+      timeoutMs: options.timeoutMs ?? defaultTimeoutMs,
+    });
+    if (headResult.exitCode === 0) {
+      return headResult;
+    }
+    if (!isMissingHeadRevisionError(headResult.stderr)) {
+      const detail = headResult.stderr.trim();
+      throw new WorkspaceError(
+        "git_command_failed",
+        `git ${headArgs.join(" ")} failed${detail ? `: ${detail}` : ""}`,
+      );
+    }
+
+    emptyTreeShaPromise ??= readEmptyTreeSha(
+      workspacePath,
+      options.timeoutMs ?? defaultTimeoutMs,
+    );
+    return runGit(buildArgs(await emptyTreeShaPromise), options);
+  };
 }
 
 async function readUntrackedNumstatEntries(
@@ -1369,7 +1387,7 @@ export class Workspace {
             "--count",
             `${mergeBaseBranch}...HEAD`,
           ],
-          { cwd: this.path, timeoutMs },
+          { cwd: this.path, allowFailure: true, timeoutMs },
         ),
         this.readPatchUniqueCommitSummaries(mergeBaseBranch, timeoutMs),
         runGit(
@@ -1393,6 +1411,26 @@ export class Workspace {
           { cwd: this.path, allowFailure: true, timeoutMs },
         ),
       ]);
+    if (aheadBehindCounts.exitCode !== 0) {
+      if (isMissingHeadRevisionError(aheadBehindCounts.stderr)) {
+        return {
+          mergeBaseBranch,
+          baseRef: null,
+          aheadCount: 0,
+          behindCount: 0,
+          hasCommittedUnmergedChanges: false,
+          commits: [],
+          files: [],
+          insertions: 0,
+          deletions: 0,
+        };
+      }
+      const detail = aheadBehindCounts.stderr.trim();
+      throw new WorkspaceError(
+        "git_command_failed",
+        `git rev-list ${mergeBaseBranch}...HEAD failed${detail ? `: ${detail}` : ""}`,
+      );
+    }
     const [behindCount, aheadCount] = aheadBehindCounts.stdout
       .trim()
       .split(/\s+/)
@@ -1542,8 +1580,7 @@ export class Workspace {
 
     switch (target.type) {
       case "uncommitted": {
-        const diffBase = await resolveUncommittedDiffBase(this.path);
-        const stats = await this.runDiffStatCommands([diffBase]);
+        const stats = await this.runUncommittedDiffStatCommands();
         return { ...stats, mergeBaseRef: null, untrackedPaths };
       }
       case "branch_committed": {
@@ -1623,6 +1660,47 @@ export class Workspace {
       runGit(["diff", "--no-ext-diff", "--shortstat", ...rangeArgs], {
         cwd: this.path,
       }),
+    ]);
+    return {
+      nameStatus: nameStatus.stdout,
+      numstat: numstat.stdout,
+      shortstat: shortstat.stdout,
+    };
+  }
+
+  private async runUncommittedDiffStatCommands(): Promise<{
+    nameStatus: string;
+    numstat: string;
+    shortstat: string;
+  }> {
+    const runUncommittedDiff = createUncommittedDiffRunner(this.path);
+    const [nameStatus, numstat, shortstat] = await Promise.all([
+      runUncommittedDiff(
+        (baseRef) => [
+          "diff",
+          "--no-ext-diff",
+          "--name-status",
+          "-M",
+          "-z",
+          baseRef,
+        ],
+        { cwd: this.path },
+      ),
+      runUncommittedDiff(
+        (baseRef) => [
+          "diff",
+          "--no-ext-diff",
+          "--numstat",
+          "-M",
+          "-z",
+          baseRef,
+        ],
+        { cwd: this.path },
+      ),
+      runUncommittedDiff(
+        (baseRef) => ["diff", "--no-ext-diff", "--shortstat", baseRef],
+        { cwd: this.path },
+      ),
     ]);
     return {
       nameStatus: nameStatus.stdout,
@@ -1781,8 +1859,23 @@ export class Workspace {
       return null;
     }
 
-    const fullNameStatus = await runGit(
-      [...range.baseArgs, "--name-status", "-z", "-M", ...range.rangeArgs],
+    const runUncommittedDiff = createUncommittedDiffRunner(this.path);
+    const runRangeGit = (
+      buildArgs: (rangeArgs: string[]) => string[],
+      options: RunGitOptions,
+    ): Promise<GitCommandResult> =>
+      range.usesUncommittedHead
+        ? runUncommittedDiff((baseRef) => buildArgs([baseRef]), options)
+        : runGit(buildArgs(range.rangeArgs), options);
+
+    const fullNameStatus = await runRangeGit(
+      (rangeArgs) => [
+        ...range.baseArgs,
+        "--name-status",
+        "-z",
+        "-M",
+        ...rangeArgs,
+      ],
       { cwd: this.path },
     );
     const requested = new Set(args.paths);
@@ -1796,18 +1889,20 @@ export class Workspace {
     const pagePathspec = [...args.paths, ...renameSources];
 
     const [nameStatus, patch] = await Promise.all([
-      runGit(
-        withDiffPathspec(
-          [...range.baseArgs, "--name-status", "-z", "-M", ...range.rangeArgs],
-          pagePathspec,
-        ),
+      runRangeGit(
+        (rangeArgs) =>
+          withDiffPathspec(
+            [...range.baseArgs, "--name-status", "-z", "-M", ...rangeArgs],
+            pagePathspec,
+          ),
         { cwd: this.path },
       ),
-      runGit(
-        withDiffPathspec(
-          [...range.baseArgs, "--binary", "-M", ...range.rangeArgs],
-          pagePathspec,
-        ),
+      runRangeGit(
+        (rangeArgs) =>
+          withDiffPathspec(
+            [...range.baseArgs, "--binary", "-M", ...rangeArgs],
+            pagePathspec,
+          ),
         buildDiffOutputGitOptions(
           this.path,
           combinedPageBufferBudget(pagePathspec.length, args.maxBytesPerFile),
@@ -1825,13 +1920,18 @@ export class Workspace {
    */
   private async resolveTrackedDiffRange(
     target: WorkspaceDiffTarget,
-  ): Promise<{ baseArgs: string[]; rangeArgs: string[] } | null> {
+  ): Promise<{
+    baseArgs: string[];
+    rangeArgs: string[];
+    usesUncommittedHead: boolean;
+  } | null> {
     const diffBase = ["diff", "--no-ext-diff"];
     switch (target.type) {
       case "uncommitted":
         return {
           baseArgs: diffBase,
-          rangeArgs: [await resolveUncommittedDiffBase(this.path)],
+          rangeArgs: ["HEAD"],
+          usesUncommittedHead: true,
         };
       case "branch_committed":
       case "all": {
@@ -1846,12 +1946,13 @@ export class Workspace {
           target.type === "branch_committed"
             ? [`${mergeBaseRef}..HEAD`]
             : [mergeBaseRef];
-        return { baseArgs: diffBase, rangeArgs };
+        return { baseArgs: diffBase, rangeArgs, usesUncommittedHead: false };
       }
       case "commit":
         return {
           baseArgs: ["show", "--format=", "--no-ext-diff"],
           rangeArgs: [target.sha],
+          usesUncommittedHead: false,
         };
       default: {
         const _exhaustive: never = target;
@@ -2152,11 +2253,38 @@ export class Workspace {
   private async readUncommittedDiffArtifacts(
     args: DiffOutputLimits & DiffPathSubset,
   ): Promise<[string, string, string]> {
-    const diffBase = await resolveUncommittedDiffBase(this.path);
-    return this.readDiffArtifactsIncludingUntracked({
-      diffArgs: [diffBase, "--"],
-      filesArgs: [diffBase, "--"],
-      numstatArgs: [diffBase, "--"],
+    const runUncommittedDiff = createUncommittedDiffRunner(this.path);
+    const [trackedDiff, trackedNumstat, trackedFiles] = await Promise.all([
+      runUncommittedDiff(
+        (baseRef) =>
+          withDiffPathspec(
+            ["diff", "--no-ext-diff", "--binary", baseRef],
+            args.paths,
+          ),
+        buildDiffOutputGitOptions(this.path, args.maxDiffBytes),
+      ),
+      runUncommittedDiff(
+        (baseRef) =>
+          withDiffPathspec(
+            ["diff", "--no-ext-diff", "--numstat", baseRef],
+            args.paths,
+          ),
+        { cwd: this.path },
+      ),
+      runUncommittedDiff(
+        (baseRef) =>
+          withDiffPathspec(
+            ["diff", "--no-ext-diff", "--name-status", baseRef],
+            args.paths,
+          ),
+        buildDiffOutputGitOptions(this.path, args.maxFileListBytes),
+      ),
+    ]);
+
+    return this.appendUntrackedDiffArtifacts({
+      diff: trackedDiff.stdout,
+      files: trackedFiles.stdout,
+      numstat: trackedNumstat.stdout,
       maxDiffBytes: args.maxDiffBytes,
       maxFileListBytes: args.maxFileListBytes,
       paths: args.paths,

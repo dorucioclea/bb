@@ -23,7 +23,11 @@ type StopWatching = () => void | Promise<void>;
 
 const STOP_WATCHING: StopWatching = () => undefined;
 const LOCAL_WORKSPACE_WATCH_CHANGE_KINDS: readonly WorkspaceStatusWatchChangeKind[] =
-  ["workspace-content-changed", "workspace-git-changed"];
+  [
+    "workspace-content-changed",
+    "workspace-git-changed",
+    "workspace-git-repository-created",
+  ];
 
 interface WorkspaceWatchState {
   lastLocalFingerprint: string | null;
@@ -39,12 +43,19 @@ interface WorkspaceWatchEntry {
   workspace: HostWorkspace;
 }
 
+interface RefreshWorkspaceArgs {
+  environmentId: string;
+  provision: ProvisionWorkspaceArgs;
+  workspacePath: string;
+}
+
 export interface WatchManagerOptions {
   dataDir?: string;
   hostWatcher?: HostWatcher;
   provisionWorkspace?: (
     options: ProvisionWorkspaceArgs,
   ) => Promise<HostWorkspace>;
+  refreshWorkspace?: (args: RefreshWorkspaceArgs) => Promise<HostWorkspace>;
   threadStorageRootPath?: string | null;
   onThreadStorageChanged?: (args: {
     environmentId: string;
@@ -100,6 +111,7 @@ function sameWorkspaceTarget(
 export class WatchManager {
   private readonly hostWatcher;
   private readonly provisionWorkspace;
+  private readonly refreshWorkspace;
   private readonly threadStorageTargets = new Map<
     string,
     HostDaemonWatchSetThreadStorageTarget
@@ -112,6 +124,10 @@ export class WatchManager {
   constructor(private readonly options: WatchManagerOptions = {}) {
     this.hostWatcher = options.hostWatcher;
     this.provisionWorkspace = options.provisionWorkspace ?? provisionWorkspace;
+    this.refreshWorkspace =
+      options.refreshWorkspace ??
+      ((args: RefreshWorkspaceArgs) =>
+        this.provisionWorkspace(args.provision));
   }
 
   async replaceWatchSet(watchSet: HostDaemonWatchSet): Promise<void> {
@@ -326,7 +342,10 @@ export class WatchManager {
     try {
       const changeKinds: HostDaemonEnvironmentChange[] = [];
       if (workspaceWatchKindsIncludeLocalState(pendingKinds)) {
-        if (!args.entry.workspace.isGitRepo) {
+        if (
+          pendingKinds.includes("workspace-git-repository-created") &&
+          !args.entry.workspace.isGitRepo
+        ) {
           await this.refreshGitWorkspaceMetadata(args.entry);
         }
         // A real workspace file event must reach live content consumers even
@@ -395,19 +414,22 @@ export class WatchManager {
     if (entry.workspace.isGitRepo) {
       return;
     }
-    const workspace = await this.provisionWorkspace(
-      reconnectProvisionArgsFromWorkspaceContext({
-        environmentId: entry.target.environmentId,
-        ...(this.options.dataDir
-          ? {
-              personalWorkspaceRoot: getPersonalWorkspaceRoot(
-                this.options.dataDir,
-              ),
-            }
-          : {}),
-        workspaceContext: entry.target.workspaceContext,
-      }),
-    );
+    const provision = reconnectProvisionArgsFromWorkspaceContext({
+      environmentId: entry.target.environmentId,
+      ...(this.options.dataDir
+        ? {
+            personalWorkspaceRoot: getPersonalWorkspaceRoot(
+              this.options.dataDir,
+            ),
+          }
+        : {}),
+      workspaceContext: entry.target.workspaceContext,
+    });
+    const workspace = await this.refreshWorkspace({
+      environmentId: entry.target.environmentId,
+      provision,
+      workspacePath: entry.target.workspaceContext.workspacePath,
+    });
     if (!workspace.isGitRepo) {
       return;
     }

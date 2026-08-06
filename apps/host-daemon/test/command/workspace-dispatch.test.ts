@@ -8,6 +8,7 @@ import {
 } from "../../src/command-dispatch.js";
 import {
   cleanupTempDirs,
+  createFakeWorkspace,
   createHarness,
   makeTempDir,
   runGitCommand,
@@ -106,6 +107,8 @@ describe("workspace command dispatch", () => {
       workspacePath,
     });
     await runGitCommand(["init", "-b", "main"], { cwd: workspacePath });
+    const refreshed = createFakeWorkspace(workspacePath);
+    harness.setProvisionedWorkspace(refreshed.workspace);
 
     const result = await dispatchOnlineRpcCommand(
       {
@@ -120,7 +123,10 @@ describe("workspace command dispatch", () => {
     );
 
     expect(result.outcome).toBe("available");
-    expect(harness.workspaceState.statusReads).toBe(1);
+    expect(refreshed.state.statusReads).toBe(1);
+    expect(
+      harness.manager.get("env-late-git")?.workspace.isGitRepo,
+    ).toBe(true);
   });
 
   it("covers workspace.pull_request", async () => {
