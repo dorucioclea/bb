@@ -22,6 +22,14 @@ export const PANEL_COLLAPSE_TRANSITION_CLASS =
 export const PANEL_RESIZE_HIT_AREA_MARGINS = { coarse: 15, fine: 8 };
 
 /**
+ * Keep panel resize targets above bounded pane headers and focus scrims.
+ *
+ * This matches SplitDivider: a lower layer lets a pane header cover the half
+ * of the grab strip that overhangs into the main panel at the header row.
+ */
+export const PANEL_RESIZE_HANDLE_LAYER_CLASS = "z-[25]";
+
+/**
  * A physical grab strip centered over a panel's zero/1px layout seam.
  *
  * Keep this on a real child rather than a pseudo-element: it must sit above the

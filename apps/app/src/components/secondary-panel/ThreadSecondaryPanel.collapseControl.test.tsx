@@ -53,7 +53,7 @@ describe("ThreadSecondaryPanel resize handle", () => {
     });
     const hitTarget = handle.querySelector("[data-panel-resize-hit-target]");
 
-    expect(handle.className.split(/\s+/u)).toContain("z-[5]");
+    expect(handle.className.split(/\s+/u)).toContain("z-[25]");
     expect(hitTarget).not.toBeNull();
     expect(hitTarget?.className.split(/\s+/u)).toEqual(
       expect.arrayContaining([

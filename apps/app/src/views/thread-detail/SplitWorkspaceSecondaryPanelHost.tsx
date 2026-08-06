@@ -35,6 +35,7 @@ import {
 import {
   PANEL_COLLAPSE_TRANSITION_CLASS,
   PANEL_RESIZE_HIT_AREA_MARGINS,
+  PANEL_RESIZE_HANDLE_LAYER_CLASS,
   PANEL_RESIZE_HIT_TARGET_CLASS,
 } from "@/components/secondary-panel/panelTransitionTokens";
 import { MACOS_APP_REGION_NO_DRAG_CLASS } from "@/lib/bb-desktop";
@@ -289,7 +290,8 @@ export function SplitWorkspaceSecondaryPanelHost({
                 onDragging={handleEmptyPanelDragging}
                 hitAreaMargins={PANEL_RESIZE_HIT_AREA_MARGINS}
                 className={cn(
-                  "relative z-[5] shrink-0 overflow-visible bg-border-seam transition-[width,opacity,background-color] hover:bg-ring/40 data-[resize-handle-state=drag]:bg-ring/40",
+                  "relative shrink-0 overflow-visible bg-border-seam transition-[width,opacity,background-color] hover:bg-ring/40 data-[resize-handle-state=drag]:bg-ring/40",
+                  PANEL_RESIZE_HANDLE_LAYER_CLASS,
                   PANEL_COLLAPSE_TRANSITION_CLASS,
                   isOpen
                     ? "w-px cursor-col-resize opacity-100"
